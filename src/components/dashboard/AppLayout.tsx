@@ -222,15 +222,18 @@ export default function AppLayout({
     }
   };
 
-  const handleDragOver = (e: React.DragEvent) => {
+  // Drive the highlight from dragOver: it fires continuously on the element
+  // actually under the pointer, so it can't flicker off when moving across
+  // child nodes the way dragEnter/dragLeave (which bubble) do.
+  const handleDragOver = (e: React.DragEvent, folderId: string | null) => {
     e.preventDefault();
-  };
-
-  const handleDragEnter = (folderId: string | null) => {
     setDragOverFolder(folderId === null ? "drafts" : folderId);
   };
 
-  const handleDragLeave = () => {
+  const handleDragLeave = (e: React.DragEvent) => {
+    // Only clear when the pointer leaves the drop target for real, not when it
+    // crosses into a child element (relatedTarget still inside currentTarget).
+    if (e.currentTarget.contains(e.relatedTarget as Node)) return;
     setDragOverFolder(null);
   };
 
@@ -239,12 +242,10 @@ export default function AppLayout({
     // Shortcut 'n' to create a new conversation
     hotkeys("n", (event) => {
       // Prevent triggering shortcut if focus is inside an input or textarea
-      if (
-        !(
-          event.target instanceof HTMLTextAreaElement ||
-          event.target instanceof HTMLInputElement
-        )
-      ) {
+      if (!(
+        event.target instanceof HTMLTextAreaElement ||
+        event.target instanceof HTMLInputElement
+      )) {
         event.preventDefault();
         router.push("/");
       }
@@ -303,13 +304,12 @@ export default function AppLayout({
             {/* Virtual Drafts Folder */}
             <div
               onDrop={(e) => handleDrop(e, null)}
-              onDragOver={handleDragOver}
-              onDragEnter={() => handleDragEnter(null)}
+              onDragOver={(e) => handleDragOver(e, null)}
               onDragLeave={handleDragLeave}
-              className={`transition-all duration-200 rounded-md ${
+              className={`transition-colors duration-150 rounded-md ring-inset ${
                 dragOverFolder === "drafts"
-                  ? "bg-blue-50 dark:bg-blue-950 ring-2 ring-blue-500 dark:ring-blue-400 scale-[1.02] shadow-lg"
-                  : ""
+                  ? "bg-blue-500/10 ring-2 ring-blue-500 dark:ring-blue-400"
+                  : "ring-0 ring-transparent"
               }`}
             >
               <DraftsFolder
@@ -365,13 +365,12 @@ export default function AppLayout({
                       <div
                         key={folder.id}
                         onDrop={(e) => handleDrop(e, folder.id)}
-                        onDragOver={handleDragOver}
-                        onDragEnter={() => handleDragEnter(folder.id)}
+                        onDragOver={(e) => handleDragOver(e, folder.id)}
                         onDragLeave={handleDragLeave}
-                        className={`transition-all duration-200 rounded-md ${
+                        className={`transition-colors duration-150 rounded-md ring-inset ${
                           dragOverFolder === folder.id
-                            ? "bg-blue-50 dark:bg-blue-950 ring-2 ring-blue-500 dark:ring-blue-400 scale-[1.02] shadow-lg"
-                            : ""
+                            ? "bg-blue-500/10 ring-2 ring-blue-500 dark:ring-blue-400"
+                            : "ring-0 ring-transparent"
                         }`}
                       >
                         <FolderItem

@@ -12,6 +12,8 @@ const nextConfig: NextConfig = {
     return config;
   },
   images: {
+    // ponytail: v16 default is [75]; hero.tsx uses quality={100}, which would silently coerce to 75
+    qualities: [75, 100],
     remotePatterns: [
       {
         protocol: "https",

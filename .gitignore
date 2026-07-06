@@ -31,6 +31,9 @@ yarn-error.log*
 .vercel
 .turbo
 
+# eve (build/discovery/compile artifacts)
+.eve/
+
 # typescript
 *.tsbuildinfo
 

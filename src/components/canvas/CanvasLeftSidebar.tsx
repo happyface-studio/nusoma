@@ -19,7 +19,7 @@ import {
   SheetTrigger,
   SheetClose,
   SheetHeader,
-} from "@/components/ui/sheet";
+} from "@/components/ui/Sheet";
 import { Button } from "@/components/ui/button";
 import {
   UnderlinedTabs,

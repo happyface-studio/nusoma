@@ -191,6 +191,8 @@ export default function SignIn() {
                   id="code"
                   name="code"
                   type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
                   placeholder="Enter the code from your email"
                   required
                   autoFocus
