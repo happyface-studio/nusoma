@@ -180,6 +180,35 @@ The app is optimized for Vercel deployment:
 - Automatic image optimization disabled for canvas compatibility
 - Bot protection via BotId integration
 
+## Monorepo
+
+Bun workspace driven by Turborepo.
+
+- `apps/web` — the Next.js app (port 3000)
+- `apps/agent` — the eve creative agent (port 2000)
+- `packages/` — shared packages (currently empty)
+
+### Development
+
+```bash
+bun install            # once, at the repo root — single lockfile
+bun run dev            # both apps in parallel (web :3000, agent :2000)
+bun run dev:web        # web only
+bun run dev:agent      # agent only
+bun run typecheck      # tsc across both apps
+bun run lint           # eslint (web)
+bun run db:push        # InstantDB schema push (web)
+```
+
+Env: copy `apps/web/.env.example` → `apps/web/.env` and `apps/agent/.env.example` → `apps/agent/.env`, then fill in secrets. Locally, web calls the agent at `AGENT_URL` and the agent calls back at `NUSOMA_INTERNAL_URL`.
+
+### Deployment (Vercel)
+
+Two projects, one repo. Set each project's **Root Directory**:
+
+- web project → `apps/web`
+- agent project → `apps/agent`
+
 ## License
 
 MIT
