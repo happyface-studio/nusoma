@@ -8,6 +8,7 @@
         "@eslint/eslintrc": "^3.3.5",
         "@next/eslint-plugin-next": "^16.2.10",
         "@types/node": "^24.13.2",
+        "@typescript-eslint/parser": "^8.53.0",
         "eslint": "^9.39.4",
         "eslint-config-next": "16.0.7",
         "eslint-plugin-react-hooks": "^7.1.1",

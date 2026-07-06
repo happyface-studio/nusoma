@@ -2,7 +2,10 @@
   "name": "nusoma",
   "private": true,
   "packageManager": "bun@1.3.10",
-  "workspaces": ["apps/*", "packages/*"],
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
     "dev": "turbo run dev",
     "dev:web": "turbo run dev --filter=web",
@@ -19,6 +22,7 @@
     "@eslint/eslintrc": "^3.3.5",
     "@next/eslint-plugin-next": "^16.2.10",
     "@types/node": "^24.13.2",
+    "@typescript-eslint/parser": "^8.53.0",
     "eslint": "^9.39.4",
     "eslint-config-next": "16.0.7",
     "eslint-plugin-react-hooks": "^7.1.1",
@@ -34,7 +38,11 @@
       "prettier --write --cache",
       "eslint --fix"
     ],
-    "apps/agent/**/*.{ts,mts}": ["prettier --write --cache"],
-    "**/*.{json,md}": ["prettier --write --cache"]
+    "apps/agent/**/*.{ts,mts}": [
+      "prettier --write --cache"
+    ],
+    "**/*.{json,md}": [
+      "prettier --write --cache"
+    ]
   }
 }
