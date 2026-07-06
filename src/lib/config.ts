@@ -44,6 +44,10 @@ export const appConfig = {
      */
     estimateType: "unit_price" as const,
   },
+
+  agent: {
+    runCreditCap: 50, // max credits a single agent run may spend; server-enforced
+  },
 } as const;
 
 export type AppConfig = typeof appConfig;
