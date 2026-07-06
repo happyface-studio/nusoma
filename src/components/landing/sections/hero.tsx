@@ -34,7 +34,7 @@ function HeroPill(): React.JSX.Element {
       initial={{ filter: "blur(10px)", opacity: 0, y: -20 }}
       animate={{ filter: "blur(0px)", opacity: 1, y: 0 }}
       transition={{ duration: 0.8 }}
-      className="flex items-center justify-center"
+      className="flex items-center"
     >
       <Link href="#">
         <Badge
@@ -60,9 +60,9 @@ function HeroTitle(): React.JSX.Element {
       animate={{ filter: "blur(0px)", opacity: 1, y: 0 }}
       transition={{ delay: 0.2, duration: 0.4 }}
     >
-      <h1 className="mt-6 text-center text-[48px] font-bold leading-[54px] tracking-[-1.2px] [font-kerning:none] sm:text-[56px] md:text-[64px] lg:text-[76px] lg:leading-[74px] lg:tracking-[-2px]">
-        Your revolutionary
-        <br /> Next.js SaaS
+      <h1 className="mt-6 text-left text-[48px] font-bold leading-[54px] tracking-[-1.2px] [font-kerning:none] sm:text-[56px] md:text-[64px] lg:text-[76px] lg:leading-[74px] lg:tracking-[-2px]">
+        Your Generative AI
+        <br /> Design Canvas
       </h1>
     </motion.div>
   );
@@ -74,7 +74,7 @@ function HeroDescription(): React.JSX.Element {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.4, duration: 0.4 }}
-      className="mx-auto mt-3 max-w-[560px] text-balance text-center text-lg leading-[26px] text-muted-foreground sm:text-xl lg:mt-6"
+      className="mt-3 max-w-[560px] text-balance text-lg leading-[26px] text-muted-foreground sm:text-xl lg:mt-6"
     >
       This is a demo application built with Achromatic. It will save you time
       and effort building your next SaaS.
@@ -88,7 +88,7 @@ function HeroButtons(): React.JSX.Element {
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.6, duration: 0.4 }}
-      className="mx-auto flex w-full flex-col gap-2 px-7 sm:w-auto sm:flex-row sm:px-0"
+      className="flex w-full flex-col gap-2 px-7 sm:w-auto sm:flex-row sm:px-0"
     >
       <Link
         href={routes.auth.SignUp}
@@ -355,8 +355,8 @@ export function Hero(): React.JSX.Element {
   return (
     <GridSection className="overflow-x-hidden">
       <MainDashedGridLines />
-      <div className="mx-auto mt-16 flex flex-col gap-6 px-2 sm:mt-20 sm:px-1 md:mt-24 lg:mt-32">
-        <div className="gap-2">
+      <div className="mt-16 flex flex-col gap-6 px-2 sm:mt-20 sm:px-1 md:mt-24 lg:mt-32">
+        <div className="flex flex-col items-start gap-2">
           <HeroPill />
           <HeroTitle />
         </div>
