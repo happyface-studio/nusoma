@@ -1139,6 +1139,14 @@ export default function OverlayPage() {
     initializeStorage();
   }, [user?.id, sessionId, projectId, loadFromStorage]);
 
+  // When an agent run completes, reload the canvas so the generated media (persisted
+  // server-side as new canvas elements) appears without a manual refresh.
+  useEffect(() => {
+    if (agentStatus === "done") {
+      void loadFromStorage();
+    }
+  }, [agentStatus, loadFromStorage]);
+
   // Load grid setting from localStorage on mount
   useEffect(() => {
     const savedShowGrid = localStorage.getItem("showGrid");
