@@ -6,13 +6,28 @@ export async function GET(
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
   const { sessionId } = await params;
-  const startIndex = req.nextUrl.searchParams.get("startIndex") ?? "0";
+
+  // Harden the trust boundary: eve session ids are opaque tokens like `wrun_01ARYZ...`.
+  // Reject anything that isn't a safe token so it can't inject path/query into the upstream URL.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
+    return new Response('event: error\ndata: "bad session id"\n\n', {
+      status: 400,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+  const startIndex = Math.max(
+    0,
+    Number.parseInt(req.nextUrl.searchParams.get("startIndex") ?? "0", 10) || 0,
+  );
+
+  // Build the URL via the URL API so path/query separators can't be injected.
+  const streamUrl = new URL(
+    `${AGENT_URL}/eve/v1/session/${encodeURIComponent(sessionId)}/stream`,
+  );
+  streamUrl.searchParams.set("startIndex", String(startIndex));
 
   // Attach to eve's durable NDJSON event stream and re-emit each line as an SSE frame.
-  const upstream = await fetch(
-    `${AGENT_URL}/eve/v1/session/${sessionId}/stream?startIndex=${startIndex}`,
-    { headers: agentHeaders() },
-  );
+  const upstream = await fetch(streamUrl, { headers: agentHeaders() });
   if (!upstream.ok || !upstream.body) {
     return new Response(
       `event: error\ndata: "agent stream unavailable (${upstream.status})"\n\n`,
