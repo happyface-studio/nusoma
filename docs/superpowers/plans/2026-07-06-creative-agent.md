@@ -753,7 +753,7 @@ git commit -m "feat(api): internal project read for agent knowledge"
 
 **Interfaces:**
 
-- Consumes: `eve/client` `Client`; admin `db`; `getUserCredits` (`src/server/billing.ts`).
+- Consumes: raw `fetch` to eve's HTTP session API (nusoma does NOT depend on the `eve` package — the boundary is HTTP/JSON only); admin `db`; `getUserCredits` (`src/server/billing.ts`).
 - Produces: `POST /api/agent/run` `{ projectId, userId?, sessionId?, brief, kind?, aspectRatio?, referencedAssetIds? }` → `{ runId, eveSessionId }`.
 
 - [ ] **Step 1: Shared eve client**
@@ -761,15 +761,26 @@ git commit -m "feat(api): internal project read for agent knowledge"
 Create `src/lib/agent/eve-client.ts`:
 
 ```ts
-import { Client } from "eve/client";
-
-export const eveClient = new Client({ host: process.env.AGENT_URL! });
+// Thin HTTP client for eve's session API. nusoma talks to the eve agent over plain
+// HTTP/JSON (the "thin waist"), so there is deliberately NO dependency on the `eve` package.
+export const AGENT_URL = process.env.AGENT_URL!;
 
 export type EveSessionState = {
   continuationToken?: string;
   sessionId?: string;
   streamIndex: number;
 };
+
+export function agentHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  // Optional route-auth for the eve HTTP channel (set AGENT_AUTH_TOKEN if the agent requires it).
+  if (process.env.AGENT_AUTH_TOKEN) {
+    headers["authorization"] = `Bearer ${process.env.AGENT_AUTH_TOKEN}`;
+  }
+  return headers;
+}
 ```
 
 - [ ] **Step 2: The run route**
@@ -781,7 +792,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/lib/instant-admin";
 import { id } from "@instantdb/admin";
 import { getUserCredits, type BillingUser } from "@/server/billing";
-import { eveClient, type EveSessionState } from "@/lib/agent/eve-client";
+import {
+  AGENT_URL,
+  agentHeaders,
+  type EveSessionState,
+} from "@/lib/agent/eve-client";
 
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as {
@@ -814,14 +829,6 @@ export async function POST(req: NextRequest) {
     }),
   ]);
 
-  // Resume this project's durable session, or start a fresh one.
-  const projQ = await db.query({
-    canvasProjects: { $: { where: { id: body.projectId } } },
-  });
-  const saved = projQ.canvasProjects?.[0]?.eveSessionState as
-    EveSessionState | undefined;
-  const session = eveClient.session(saved ?? undefined);
-
   const message = [
     `runId: ${runId}`,
     `projectId: ${body.projectId}`,
@@ -837,19 +844,52 @@ export async function POST(req: NextRequest) {
     .filter(Boolean)
     .join("\n");
 
-  const response = await session.send(message);
-  void response; // fire-and-forget; the durable turn runs on the eve deployment
+  // Resume this project's durable eve session, or start a fresh one — via eve's HTTP session API.
+  const saved = (
+    await db.query({
+      canvasProjects: { $: { where: { id: body.projectId } } },
+    })
+  ).canvasProjects?.[0]?.eveSessionState as EveSessionState | undefined;
 
-  const state = session.state as EveSessionState;
+  const resume = Boolean(saved?.sessionId && saved?.continuationToken);
+  const url = resume
+    ? `${AGENT_URL}/eve/v1/session/${saved!.sessionId}`
+    : `${AGENT_URL}/eve/v1/session`;
+  const payload = resume
+    ? { continuationToken: saved!.continuationToken, message }
+    : { message };
+
+  const res = await fetch(url, {
+    method: "POST",
+    headers: agentHeaders(),
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    return NextResponse.json(
+      { error: "agent_unavailable", status: res.status },
+      { status: 502 },
+    );
+  }
+  const eveSessionId =
+    res.headers.get("x-eve-session-id") ?? saved?.sessionId ?? null;
+  const data = (await res.json().catch(() => ({}))) as {
+    continuationToken?: string;
+  };
+
+  const state: EveSessionState = {
+    sessionId: eveSessionId ?? undefined,
+    continuationToken: data.continuationToken ?? saved?.continuationToken,
+    streamIndex: 0,
+  };
   await db.transact([
     db.tx.canvasProjects[body.projectId].update({ eveSessionState: state }),
   ]);
 
-  return NextResponse.json({ runId, eveSessionId: state.sessionId });
+  return NextResponse.json({ runId, eveSessionId });
 }
 ```
 
-> **Integration risk to verify first:** confirm the durable turn continues on the eve deployment after this handler returns without draining `response`. If eve requires the stream to be consumed to progress, the SSE route in Task 8 becomes the driver (it attaches to the same session) — which it does anyway, so end-to-end still works; only latency-to-first-event changes.
+> **Integration risk to verify in the live pass:** confirm the durable turn continues on the eve deployment after this POST returns (we do not drain the turn here). The SSE route (Task 9) attaches to the same session to observe it. Also confirm whether eve's HTTP channel requires route-auth — if so, set `AGENT_AUTH_TOKEN` (sent as `Authorization: Bearer`).
 
 - [ ] **Step 3: Verify**
 
@@ -982,7 +1022,7 @@ git commit -m "feat(agent): generate + read_project tools calling nusoma"
 
 **Interfaces:**
 
-- Consumes: `eveClient` (Task 7).
+- Consumes: `AGENT_URL` / `agentHeaders` (Task 7) + raw `fetch` to eve's NDJSON stream endpoint (no `eve` package dependency).
 - Produces: SSE stream re-emitting eve NDJSON events; accepts `?startIndex=` for reconnect.
 
 - [ ] **Step 1: Implement**
@@ -991,29 +1031,49 @@ Create `src/app/api/agent/stream/[sessionId]/route.ts`:
 
 ```ts
 import { NextRequest } from "next/server";
-import { eveClient } from "@/lib/agent/eve-client";
+import { AGENT_URL, agentHeaders } from "@/lib/agent/eve-client";
 
 export async function GET(
   req: NextRequest,
   { params }: { params: Promise<{ sessionId: string }> },
 ) {
   const { sessionId } = await params;
-  const startIndex = Number(req.nextUrl.searchParams.get("startIndex") ?? "0");
-  const session = eveClient.session({ sessionId, streamIndex: startIndex });
+  const startIndex = req.nextUrl.searchParams.get("startIndex") ?? "0";
+
+  // Attach to eve's durable NDJSON event stream and re-emit each line as an SSE frame.
+  const upstream = await fetch(
+    `${AGENT_URL}/eve/v1/session/${sessionId}/stream?startIndex=${startIndex}`,
+    { headers: agentHeaders() },
+  );
+  if (!upstream.ok || !upstream.body) {
+    return new Response(
+      `event: error\ndata: "agent stream unavailable (${upstream.status})"\n\n`,
+      { status: 502, headers: { "Content-Type": "text/event-stream" } },
+    );
+  }
+
   const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const reader = upstream.body.getReader();
 
   const stream = new ReadableStream({
     async start(controller) {
+      let buffer = "";
       try {
-        for await (const event of session.stream({ startIndex })) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
-          );
-          if (
-            event.type === "session.completed" ||
-            event.type === "session.failed"
-          )
-            break;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split("\n");
+          buffer = lines.pop() ?? ""; // keep the partial trailing line
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (trimmed)
+              controller.enqueue(encoder.encode(`data: ${trimmed}\n\n`));
+          }
+        }
+        if (buffer.trim()) {
+          controller.enqueue(encoder.encode(`data: ${buffer.trim()}\n\n`));
         }
       } catch (e) {
         controller.enqueue(
@@ -1024,6 +1084,9 @@ export async function GET(
       } finally {
         controller.close();
       }
+    },
+    cancel() {
+      void reader.cancel();
     },
   });
 
@@ -1036,6 +1099,8 @@ export async function GET(
   });
 }
 ```
+
+> eve's NDJSON lines are already JSON objects, so we forward each as `data: <line>`; the browser's `EventSource` does `JSON.parse(e.data)` (Task 10). Whether eve's raw stream endpoint honors `?startIndex=` for replay-on-reconnect is a live-verification item; if it always replays from 0, the overlay may show duplicate lines after a reconnect (cosmetic) — dedupe in the client later if needed.
 
 - [ ] **Step 2: Verify**
 
