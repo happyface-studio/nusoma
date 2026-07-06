@@ -1,12 +1,10 @@
 {
+  "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "target": "ES2017",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
-    "skipLibCheck": true,
-    "strict": true,
     "noEmit": false,
-    "esModuleInterop": true,
     "composite": true,
     "module": "esnext",
     "declaration": true,
@@ -20,11 +18,7 @@
       "@/*": ["./src/*"],
       "content-collections": ["./.content-collections/generated"]
     },
-    "plugins": [
-      {
-        "name": "next"
-      }
-    ]
+    "plugins": [{ "name": "next" }]
   },
   "include": [
     "**/*.ts",

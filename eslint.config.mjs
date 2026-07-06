@@ -3,7 +3,16 @@ import tsParser from "@typescript-eslint/parser";
 
 const eslintConfig = [
   {
-    ignores: ["node_modules/**", ".next/**", "out/**", "build/**", "next-env.d.ts"]
+    ignores: [
+      "node_modules/**",
+      "**/.next/**",
+      "**/out/**",
+      "**/build/**",
+      "**/next-env.d.ts",
+      "apps/agent/**",
+      "packages/**",
+      "**/.content-collections/**"
+    ]
   },
   {
     files: ["**/*.{js,jsx,mjs,cjs,ts,tsx}"],
