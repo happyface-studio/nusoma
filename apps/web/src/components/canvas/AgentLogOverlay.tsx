@@ -10,20 +10,52 @@ function line(
         text: ev.data?.reasoningDelta ?? ev.data?.text ?? "",
         tone: "dim",
       };
-    case "actions.requested":
-      return {
-        text: `▸ ${ev.data?.name ?? "tool"}(${JSON.stringify(ev.data?.input ?? {}).slice(0, 120)})`,
-        tone: "act",
-      };
+    case "actions.requested": {
+      // eve streams `data.actions: RuntimeActionRequest[]`; a tool-call carries
+      // { toolName, input }, other kinds (subagent-call, load-skill) carry `kind`.
+      const label = (ev.data?.actions ?? [])
+        .map(
+          (a: any) =>
+            `${a?.toolName ?? a?.kind ?? "action"}(${JSON.stringify(a?.input ?? {}).slice(0, 100)})`,
+        )
+        .join(", ");
+      return { text: `▸ ${label || "action"}`, tone: "act" };
+    }
     case "action.result": {
-      const r = ev.data?.result ?? ev.data;
-      if (r?.error) return { text: `✗ ${r.error}`, tone: "err" };
-      if (r?.assetId)
+      // eve streams `data.result: RuntimeActionResult` (+ `data.status`,
+      // `data.error`). The tool's return value is `result.output` — for the
+      // `generate` tool that's the /api/internal/generate response:
+      // { assetId, ... } on success, { error } on a handled failure.
+      const result = ev.data?.result;
+      const output = result?.output;
+      const hasErrorField =
+        !!output && typeof output === "object" && "error" in output;
+      if (
+        ev.data?.status === "failed" ||
+        ev.data?.status === "rejected" ||
+        result?.isError === true ||
+        hasErrorField
+      ) {
+        const msg =
+          (hasErrorField && (output as { error?: unknown }).error) ||
+          ev.data?.error?.message ||
+          ev.data?.status ||
+          "failed";
         return {
-          text: `✓ asset ${String(r.assetId).slice(0, 8)} · ${r.credits ?? "?"} credits`,
+          text: `✗ ${typeof msg === "string" ? msg : JSON.stringify(msg)}`,
+          tone: "err",
+        };
+      }
+      if (!!output && typeof output === "object" && "assetId" in output) {
+        const o = output as { assetId: unknown; credits?: unknown };
+        return {
+          text: `✓ asset ${String(o.assetId).slice(0, 8)} · ${o.credits ?? "?"} credits`,
           tone: "ok",
         };
-      return { text: "✓ done", tone: "ok" };
+      }
+      const name =
+        result?.toolName ?? result?.subagentName ?? result?.kind ?? "done";
+      return { text: `✓ ${name}`, tone: "ok" };
     }
     case "session.completed":
       return { text: "— run complete —", tone: "ok" };
