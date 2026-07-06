@@ -82,14 +82,13 @@ import {
 } from "@/components/canvas/PromptEditor";
 import { GeneratingPlaceholder } from "@/components/canvas/GeneratingPlaceholder";
 import { SettingsDialog } from "@/components/canvas/SettingsDialog";
+import { AgentLogOverlay } from "@/components/canvas/AgentLogOverlay";
 import Image from "next/image";
 import { db } from "@/lib/db";
+import { useAgentRun } from "@/hooks/useAgentRun";
 
 // Import handlers
-import {
-  handleRun as handleRunHandler,
-  uploadImageDirect,
-} from "@/lib/handlers/generation-handler";
+import { uploadImageDirect } from "@/lib/handlers/generation-handler";
 import { handleRemoveBackground as handleRemoveBackgroundHandler } from "@/lib/handlers/background-handler";
 import { useParams } from "next/navigation";
 
@@ -97,6 +96,11 @@ export default function OverlayPage() {
   const { user, sessionId } = useAuth();
   const params = useParams();
   const projectId = params?.id as string;
+  const {
+    start: startAgentRun,
+    events: agentEvents,
+    status: agentStatus,
+  } = useAgentRun();
   const [images, setImages] = useState<PlacedImage[]>([]);
   const [videos, setVideos] = useState<PlacedVideo[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1853,24 +1857,23 @@ export default function OverlayPage() {
 
   // Handle context menu actions
   const handleRun = async () => {
-    await handleRunHandler({
-      images,
-      videos,
-      selectedIds,
-      generationSettings,
-      canvasSize,
-      viewport,
-      falClient,
-      setImages,
-      setVideos,
-      setSelectedIds,
-      setActiveGenerations,
-      setIsGenerating,
-      toast: toast.add,
-      generateTextToImage,
-      setActiveVideoGenerations,
-      userId: user?.id || undefined,
+    if (!projectId) return;
+    // Mirror the legacy handler's image/video detection (see
+    // src/lib/handlers/generation-handler.ts): a modelId that resolves to a
+    // known video model means this run targets video generation.
+    const kind: "image" | "video" =
+      generationSettings.modelId &&
+      getVideoModelById(generationSettings.modelId)
+        ? "video"
+        : "image";
+    await startAgentRun({
+      projectId,
+      userId: user?.id,
       sessionId: sessionId || undefined,
+      brief: generationSettings.prompt ?? "",
+      kind,
+      aspectRatio: generationSettings.imageSize,
+      referencedAssetIds: generationSettings.referencedAssetIds,
     });
   };
 
@@ -3325,6 +3328,12 @@ export default function OverlayPage() {
               )}
               viewport={viewport}
               isDragging={isDraggingImage}
+            />
+
+            {/* Agent run log overlay */}
+            <AgentLogOverlay
+              events={agentEvents}
+              visible={agentStatus !== "idle"}
             />
           </div>
         </main>
