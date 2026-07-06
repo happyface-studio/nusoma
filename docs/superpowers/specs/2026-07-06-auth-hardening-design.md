@@ -5,6 +5,24 @@
 **Owner:** Simon Weniger
 **Base branch:** `feat/auth-hardening` (off `feat/monorepo`) → PR #3 after PR #2 merges
 
+> **Update (2026-07-06) — SSE auth via header-capable EventSource ponyfill.**
+> The HMAC stream-token design below (decision row "SSE stream auth", §4.2,
+> and the `streamToken` parts of §4.5–4.7, §6, §7, §10) is **superseded**. Four
+> of the billed procedures are tRPC `subscription`s that ride
+> `httpSubscriptionLink` (SSE) and cannot send an `Authorization` header; tRPC's
+> only built-in fallback (`connectionParams`) serializes the credential into the
+> URL query string (verified in `@trpc/client@11.18.0`), which would leak the
+> long-lived refresh token into request logs. Instead we adopt a **header-capable
+> EventSource ponyfill** (`extended-eventsource`) so the **Bearer token flows
+> uniformly** to the batch link, the 4 SSE subscriptions, AND `/api/agent/stream`.
+> This **removes** `stream-token.ts`, `STREAM_TOKEN_SECRET`, and the
+> `run → streamToken` handoff entirely; no credential ever rides in a URL. The
+> agent-stream route is authorized by verifying the Bearer user **and** binding
+> the request to a `projectId` the user owns whose stored `eveSessionState.sessionId`
+> matches the requested stream (single indexed ownership query; no schema/perms
+> change). The authoritative implementation is
+> `docs/superpowers/plans/2026-07-06-auth-hardening.md`.
+
 ## 1. Summary
 
 Close the accepted "trust-the-input" findings: nusoma's server currently derives
@@ -30,7 +48,7 @@ is authorized with a short-lived server-signed capability token.
 | Verification        | `@instantdb/admin` `db.auth.verifyToken(token) → User{ id }`     | Confirmed against installed types; `User.id` is the trusted `userId`.                                                    |
 | Anonymous flow      | **Dropped** for billed/agent ops — auth required                 | User decision. Anonymous users already can't spend credits; removes the whole spoof surface.                             |
 | Scope               | **App-wide** — all billed tRPC procedures + both agent routes    | Finding #2 implicates every billed `publicProcedure`, not just the agent path.                                           |
-| SSE stream auth     | Short-lived **HMAC** capability token minted by `/api/agent/run` | `EventSource` can't set headers; a scoped, expiring signed token avoids putting the refresh token in a URL.              |
+| SSE stream auth     | **Header-capable EventSource ponyfill** (`extended-eventsource`) → Bearer everywhere (see Update note) | Native `EventSource` can't set headers and tRPC `connectionParams` leak the token into the URL; a ponyfill sends the Bearer header for all SSE, so no credential ever rides in a URL. Supersedes the HMAC row. |
 | perms.ts tightening | **Out of scope** (separate follow-up)                            | InstantDB perms govern direct-from-client queries — a distinct surface; tightening risks breaking existing client reads. |
 
 ## 3. Architecture
