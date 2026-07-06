@@ -36,3 +36,15 @@ test("capExceeded is true only when spend would exceed cap", () => {
   expect(capExceeded(40, 20, 50)).toBe(true);
   expect(capExceeded(40, 10, 50)).toBe(false);
 });
+
+test("idempotencyKeyFor is stable regardless of input key order", () => {
+  const a = idempotencyKeyFor("run1", "fal-ai/x", { a: 1, b: 2 });
+  const b = idempotencyKeyFor("run1", "fal-ai/x", { b: 2, a: 1 });
+  expect(a).toBe(b);
+});
+
+test("extractMediaUrl throws on empty url string", () => {
+  expect(() =>
+    extractMediaUrl("image", { data: { images: [{ url: "" }] } }),
+  ).toThrow("no media in fal result");
+});
