@@ -3,9 +3,11 @@ import { z } from "zod";
 
 export default defineTool({
   description:
-    "Read the current canvas project: its assets, their prompts, and lineage. Use before generating if the brief refers to existing assets.",
+    "Read the current canvas project for THIS run (its assets, prompts, and lineage). Use before generating if the brief refers to existing assets. Pass the runId from your context.",
   inputSchema: z.object({
-    projectId: z.string().describe("The projectId given in your context."),
+    runId: z
+      .string()
+      .describe("The runId given in your context. Do not invent one."),
   }),
   async execute(input) {
     const res = await fetch(

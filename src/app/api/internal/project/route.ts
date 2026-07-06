@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { db } from "@/lib/instant-admin";
 
 function secretOk(header: string | null): boolean {
@@ -8,11 +9,28 @@ function secretOk(header: string | null): boolean {
   return timingSafeEqual(Buffer.from(header), Buffer.from(expected));
 }
 
+const BodySchema = z.object({ runId: z.string().min(1) });
+
 export async function POST(req: NextRequest) {
   if (!secretOk(req.headers.get("x-nusoma-secret"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
-  const { projectId } = (await req.json()) as { projectId: string };
+  const parsed = BodySchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json({ error: "bad_request" }, { status: 400 });
+  }
+
+  // Resolve the project from the run (bound at run creation) so the agent can only read the
+  // project its OWN run belongs to — never an arbitrary client-supplied projectId (IDOR).
+  const run = (
+    await db.query({
+      agentRuns: { $: { where: { runId: parsed.data.runId } } },
+    })
+  ).agentRuns?.[0];
+  if (!run) {
+    return NextResponse.json({ error: "unknown_run" }, { status: 404 });
+  }
+  const projectId = run.projectId as string;
 
   const q = await db.query({
     canvasProjects: {
