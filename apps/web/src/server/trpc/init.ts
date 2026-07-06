@@ -1,7 +1,8 @@
-import { initTRPC } from "@trpc/server";
+import { initTRPC, TRPCError } from "@trpc/server";
 import superjson from "superjson";
 import { treeifyError, ZodError } from "zod";
 import type { Context } from "./context";
+import { verifyRequestUser, AuthError } from "@/lib/auth/verify";
 
 const t = initTRPC.context<Context>().create({
   transformer: superjson,
@@ -20,3 +21,18 @@ const t = initTRPC.context<Context>().create({
 export const router = t.router;
 export const publicProcedure = t.procedure;
 export const createCallerFactory = t.createCallerFactory;
+
+export const protectedProcedure = publicProcedure.use(async ({ ctx, next }) => {
+  if (!ctx.req) {
+    throw new TRPCError({ code: "UNAUTHORIZED" });
+  }
+  try {
+    const user = await verifyRequestUser(ctx.req);
+    return next({ ctx: { ...ctx, user } });
+  } catch (e) {
+    if (e instanceof AuthError) {
+      throw new TRPCError({ code: "UNAUTHORIZED" });
+    }
+    throw e;
+  }
+});

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicProcedure, router } from "../init";
+import { protectedProcedure, publicProcedure, router } from "../init";
 import { tracked } from "@trpc/server";
 import { createFalClient, FalClient } from "@fal-ai/client";
 import sharp from "sharp";
@@ -142,16 +142,13 @@ async function fetchAndUploadImages(
 }
 
 export const appRouter = router({
-  transformVideo: publicProcedure
+  transformVideo: protectedProcedure
     .input(
       z.object({
         videoUrl: z.url(),
         prompt: z.string().optional(),
         styleId: z.string().optional(),
         apiKey: z.string().optional(),
-        // Billing context
-        userId: z.string().optional(),
-        sessionId: z.string().optional(),
       }),
     )
     .subscription(async function* ({ input, signal, ctx }) {
@@ -160,10 +157,7 @@ export const appRouter = router({
         const useCustomApiKey = !!input.apiKey;
 
         // Billing: Check credits before generation
-        const billingUser: BillingUser = {
-          userId: input.userId,
-          sessionId: input.sessionId,
-        };
+        const billingUser: BillingUser = { userId: ctx.user.id };
 
         const billingCheck = await checkCreditsForGeneration(
           billingUser,
@@ -285,7 +279,7 @@ export const appRouter = router({
         });
       }
     }),
-  generateImageToVideo: publicProcedure
+  generateImageToVideo: protectedProcedure
     .input(
       z
         .object({
@@ -304,9 +298,6 @@ export const appRouter = router({
           audioUrl: z.string().optional(),
           startImageUrl: z.string().optional(),
           endImageUrl: z.string().optional(),
-          // Billing context
-          userId: z.string().optional(),
-          sessionId: z.string().optional(),
         })
         .loose(), // Allow additional fields for different models
     )
@@ -320,10 +311,7 @@ export const appRouter = router({
         const useCustomApiKey = !!input.apiKey;
 
         // Billing: Check credits before generation
-        const billingUser: BillingUser = {
-          userId: input.userId,
-          sessionId: input.sessionId,
-        };
+        const billingUser: BillingUser = { userId: ctx.user.id };
 
         const billingCheck = await checkCreditsForGeneration(
           billingUser,
@@ -792,7 +780,7 @@ export const appRouter = router({
       }
     }),
 
-  generateTextToVideo: publicProcedure
+  generateTextToVideo: protectedProcedure
     .input(
       z.object({
         prompt: z.string(),
@@ -800,9 +788,6 @@ export const appRouter = router({
         aspectRatio: z.string().optional().default("16:9"),
         styleId: z.string().optional(),
         apiKey: z.string().optional(),
-        // Billing context
-        userId: z.string().optional(),
-        sessionId: z.string().optional(),
       }),
     )
     .subscription(async function* ({ input, signal, ctx }) {
@@ -811,10 +796,7 @@ export const appRouter = router({
         const useCustomApiKey = !!input.apiKey;
 
         // Billing: Check credits before generation
-        const billingUser: BillingUser = {
-          userId: input.userId,
-          sessionId: input.sessionId,
-        };
+        const billingUser: BillingUser = { userId: ctx.user.id };
 
         const billingCheck = await checkCreditsForGeneration(
           billingUser,
@@ -915,14 +897,11 @@ export const appRouter = router({
     }),
 
   // Billing: Charge credits after successful generation
-  removeBackground: publicProcedure
+  removeBackground: protectedProcedure
     .input(
       z.object({
         imageUrl: z.url(),
         apiKey: z.string().optional(),
-        // Billing context
-        userId: z.string().optional(),
-        sessionId: z.string().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -931,10 +910,7 @@ export const appRouter = router({
         const useCustomApiKey = !!input.apiKey;
 
         // Billing: Check credits before generation
-        const billingUser: BillingUser = {
-          userId: input.userId,
-          sessionId: input.sessionId,
-        };
+        const billingUser: BillingUser = { userId: ctx.user.id };
 
         const billingCheck = await checkCreditsForGeneration(
           billingUser,
@@ -984,15 +960,12 @@ export const appRouter = router({
       }
     }),
 
-  isolateObject: publicProcedure
+  isolateObject: protectedProcedure
     .input(
       z.object({
         imageUrl: z.url(),
         textInput: z.string(),
         apiKey: z.string().optional(),
-        // Billing context
-        userId: z.string().optional(),
-        sessionId: z.string().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -1001,10 +974,7 @@ export const appRouter = router({
         const useCustomApiKey = !!input.apiKey;
 
         // Billing: Check credits before generation
-        const billingUser: BillingUser = {
-          userId: input.userId,
-          sessionId: input.sessionId,
-        };
+        const billingUser: BillingUser = { userId: ctx.user.id };
 
         const billingCheck = await checkCreditsForGeneration(
           billingUser,
@@ -1191,7 +1161,7 @@ export const appRouter = router({
       }
     }),
 
-  generateTextToImage: publicProcedure
+  generateTextToImage: protectedProcedure
     .input(
       z.object({
         prompt: z.string(),
@@ -1209,8 +1179,6 @@ export const appRouter = router({
           ])
           .optional(),
         apiKey: z.string().optional(),
-        userId: z.string().optional(),
-        sessionId: z.string().optional(),
       }),
     )
     .mutation(async ({ input, ctx }) => {
@@ -1220,10 +1188,7 @@ export const appRouter = router({
         const useCustomApiKey = !!input.apiKey;
 
         // Billing: Check credits before generation
-        const billingUser: BillingUser = {
-          userId: input.userId,
-          sessionId: input.sessionId,
-        };
+        const billingUser: BillingUser = { userId: ctx.user.id };
 
         const billingCheck = await checkCreditsForGeneration(
           billingUser,
@@ -1289,7 +1254,7 @@ export const appRouter = router({
       }
     }),
 
-  generateImageStream: publicProcedure
+  generateImageStream: protectedProcedure
     .input(
       z.object({
         imageUrl: z.url().optional(),
@@ -1311,9 +1276,6 @@ export const appRouter = router({
           .optional(),
         lastEventId: z.string().optional(),
         apiKey: z.string().optional(),
-        // Billing context
-        userId: z.string().optional(),
-        sessionId: z.string().optional(),
       }),
     )
     .subscription(async function* ({ input, ctx }) {
@@ -1330,10 +1292,7 @@ export const appRouter = router({
         const useCustomApiKey = !!input.apiKey;
 
         // Billing: Check credits before generation
-        const billingUser: BillingUser = {
-          userId: input.userId,
-          sessionId: input.sessionId,
-        };
+        const billingUser: BillingUser = { userId: ctx.user.id };
 
         const billingCheck = await checkCreditsForGeneration(
           billingUser,
