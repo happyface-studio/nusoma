@@ -27,6 +27,7 @@ const _schema = i.schema({
       viewportScale: i.number().optional(),
       lastModified: i.date().indexed().optional(),
       sessionId: i.string().optional().indexed(), // For unauthenticated users
+      eveSessionState: i.json().optional(), // { continuationToken?, sessionId?, streamIndex }
     }),
     canvasElements: i.entity({
       type: i.string().indexed().optional(), // "image", "video", "text", "shape"
@@ -65,6 +66,25 @@ const _schema = i.schema({
       snapshotData: i.json().optional(), // Store the full state as JSON
       timestamp: i.date().indexed().optional(),
       order: i.number().indexed().optional(), // To maintain history order
+    }),
+    agentRuns: i.entity({
+      runId: i.string().unique().indexed(),
+      userId: i.string().optional().indexed(),
+      sessionId: i.string().optional().indexed(),
+      projectId: i.string().indexed(),
+      spentCredits: i.number(),
+      status: i.string().indexed(), // 'active' | 'done' | 'failed'
+      createdAt: i.date().indexed(),
+    }),
+    agentGenerations: i.entity({
+      idempotencyKey: i.string().unique().indexed(),
+      runId: i.string().indexed(),
+      endpoint: i.string(),
+      status: i.string().indexed(), // 'running' | 'completed' | 'failed'
+      assetId: i.string().optional(),
+      credits: i.number().optional(),
+      cost: i.number().optional(),
+      createdAt: i.date().indexed(),
     }),
   },
   links: {
@@ -155,6 +175,8 @@ export type CanvasAsset = InstaQLEntity<AppSchema, "canvasAssets">;
 export type CanvasHistory = InstaQLEntity<AppSchema, "canvasHistory">;
 export type UserProfile = InstaQLEntity<AppSchema, "userProfiles">;
 export type Folder = InstaQLEntity<AppSchema, "folders">;
+export type AgentRun = InstaQLEntity<AppSchema, "agentRuns">;
+export type AgentGeneration = InstaQLEntity<AppSchema, "agentGenerations">;
 
 // Export types with relations for nested queries
 export type CanvasProjectWithElements = InstaQLEntity<
