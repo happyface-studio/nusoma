@@ -1426,18 +1426,12 @@ export const appRouter = router({
   // ============================================================================
 
   /**
-   * Get user's current credit balance from Polar
+   * Get the verified user's current credit balance from Polar
    */
-  getUserCredits: publicProcedure
-    .input(
-      z.object({
-        userId: z.string(),
-      }),
-    )
-    .query(async ({ input }) => {
-      const credits = await getUserCredits({ userId: input.userId });
-      return { credits };
-    }),
+  getUserCredits: protectedProcedure.query(async ({ ctx }) => {
+    const credits = await getUserCredits({ userId: ctx.user.id });
+    return { credits };
+  }),
 
   /**
    * Get available credit packages from Polar
