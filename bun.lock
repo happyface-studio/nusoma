@@ -85,6 +85,7 @@
         "embla-carousel-autoplay": "^8.6.0",
         "embla-carousel-react": "^8.6.0",
         "eslint-plugin-react-hooks": "^7.1.1",
+        "extended-eventsource": "^2.1.0",
         "fabric": "^6.9.1",
         "form": "^0.2.5",
         "geist": "^1.7.2",
@@ -1620,6 +1621,8 @@
     "extend": ["extend@3.0.2", "", {}, "sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g=="],
 
     "extend-shallow": ["extend-shallow@2.0.1", "", { "dependencies": { "is-extendable": "^0.1.0" } }, "sha512-zCnTtlxNoAiDc3gqY2aYAWFx7XWWiasuF2K8Me5WbN8otHKTUKBwjPtNpRs/rbUZm7KxWAaNj7P1a/p52GbVug=="],
+
+    "extended-eventsource": ["extended-eventsource@2.1.0", "", {}, "sha512-0DX6gEWwfcDkglS7bdr6oH5jb6TR6BvsVvmOcsUzyl5ESqkze9XImyNZPLoZtaGi1kKGjH/+dNqd8O0SjD7KgQ=="],
 
     "extension-port-stream": ["extension-port-stream@3.0.0", "", { "dependencies": { "readable-stream": "^3.6.2 || ^4.4.2", "webextension-polyfill": ">=0.10.0 <1.0" } }, "sha512-an2S5quJMiy5bnZKEf6AkfH/7r8CzHvhchU40gxN+OM6HPhe7Z9T1FUychcf2M9PpPOO0Hf7BAEfJkw2TDIBDw=="],
 

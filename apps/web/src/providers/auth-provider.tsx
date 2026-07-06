@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Cookies from "js-cookie";
 import { CircleNotchIcon } from "@phosphor-icons/react";
 import { db } from "@/lib/db";
+import { setAuthToken } from "@/lib/auth/authToken";
 
 // Define a strict User type based on InstantDB's auth user
 export interface User {
@@ -28,6 +29,13 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const { isLoading: authIsLoading, user, error } = db.useAuth();
+
+  // Keep the client token holder in sync with the verified InstantDB session.
+  // Set during render (not in an effect) so it is populated before child
+  // components mount and fire their first authed request.
+  setAuthToken(
+    (user as { refresh_token?: string } | null)?.refresh_token ?? null,
+  );
   const [profile, setProfile] = useState<any | null>(null);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const router = useRouter();
