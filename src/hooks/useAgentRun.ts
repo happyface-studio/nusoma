@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 export type AgentEvent = { type: string; data?: any };
 
@@ -8,6 +8,11 @@ export function useAgentRun() {
     "idle",
   );
   const indexRef = useRef(0);
+  const esRef = useRef<EventSource | null>(null);
+  const doneRef = useRef(false);
+
+  // Close any open stream when the component using this hook unmounts.
+  useEffect(() => () => esRef.current?.close(), []);
 
   const start = useCallback(
     async (args: {
@@ -19,37 +24,50 @@ export function useAgentRun() {
       aspectRatio?: string;
       referencedAssetIds?: string[];
     }) => {
+      esRef.current?.close();
+      doneRef.current = false;
+      indexRef.current = 0;
       setEvents([]);
       setStatus("running");
-      indexRef.current = 0;
+
       const res = await fetch("/api/agent/run", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(args),
       });
       const { eveSessionId } = await res.json();
+      if (!eveSessionId) {
+        doneRef.current = true;
+        setStatus("failed");
+        return;
+      }
 
       const open = () => {
         const es = new EventSource(
           `/api/agent/stream/${eveSessionId}?startIndex=${indexRef.current}`,
         );
+        esRef.current = es;
         es.onmessage = (m) => {
-          const ev = JSON.parse(m.data) as AgentEvent;
+          let ev: AgentEvent;
+          try {
+            ev = JSON.parse(m.data) as AgentEvent;
+          } catch {
+            return;
+          }
           indexRef.current += 1;
           setEvents((prev) => [...prev, ev]);
-          if (ev.type === "session.completed") {
-            setStatus("done");
-            es.close();
-          }
-          if (ev.type === "session.failed") {
-            setStatus("failed");
+          if (ev.type === "session.completed" || ev.type === "session.failed") {
+            doneRef.current = true;
+            setStatus(ev.type === "session.completed" ? "done" : "failed");
             es.close();
           }
         };
         es.onerror = () => {
           es.close();
-          if (indexRef.current >= 0) open();
-        }; // reconnect from cursor
+          // Reconnect from the cursor while the run is still active, with a backoff so a
+          // down agent isn't hammered. A run ends naturally via session.completed/failed.
+          if (!doneRef.current) setTimeout(open, 1500);
+        };
       };
       open();
     },
