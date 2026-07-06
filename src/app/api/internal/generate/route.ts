@@ -148,7 +148,12 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  let media: { url: string; durationSeconds?: number };
+  let media: {
+    url: string;
+    durationSeconds?: number;
+    width?: number;
+    height?: number;
+  };
   try {
     media = extractMediaUrl(kind, result);
   } catch (e) {
@@ -169,7 +174,10 @@ export async function POST(req: NextRequest) {
       kind,
       prompt: prompt ?? "",
       creditsConsumed: estimate.totalCredits,
+      projectId: run.projectId,
       durationSeconds: media.durationSeconds,
+      width: media.width,
+      height: media.height,
       userId: run.userId,
       sessionId: run.sessionId,
       referencedAssetIds,

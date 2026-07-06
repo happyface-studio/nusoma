@@ -3,17 +3,32 @@ import { createHash } from "node:crypto";
 export function extractMediaUrl(
   kind: "image" | "video",
   falResult: unknown,
-): { url: string; durationSeconds?: number } {
+): { url: string; durationSeconds?: number; width?: number; height?: number } {
   const data = (falResult as any)?.data ?? falResult;
   if (kind === "image") {
-    const url = data?.images?.[0]?.url ?? data?.image?.url;
-    if (typeof url === "string" && url.length > 0) return { url };
-  } else {
-    const url = data?.video?.url ?? data?.videos?.[0]?.url;
+    const img = data?.images?.[0] ?? data?.image;
+    const url = img?.url;
     if (typeof url === "string" && url.length > 0) {
-      const durationSeconds =
-        typeof data?.duration === "number" ? data.duration : undefined;
-      return { url, durationSeconds };
+      const out: { url: string; width?: number; height?: number } = { url };
+      if (typeof img?.width === "number") out.width = img.width;
+      if (typeof img?.height === "number") out.height = img.height;
+      return out;
+    }
+  } else {
+    const vid = data?.video ?? data?.videos?.[0];
+    const url = vid?.url;
+    if (typeof url === "string" && url.length > 0) {
+      const out: {
+        url: string;
+        durationSeconds?: number;
+        width?: number;
+        height?: number;
+      } = { url };
+      if (typeof data?.duration === "number")
+        out.durationSeconds = data.duration;
+      if (typeof vid?.width === "number") out.width = vid.width;
+      if (typeof vid?.height === "number") out.height = vid.height;
+      return out;
     }
   }
   throw new Error("no media in fal result");

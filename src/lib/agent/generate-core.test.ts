@@ -48,3 +48,14 @@ test("extractMediaUrl throws on empty url string", () => {
     extractMediaUrl("image", { data: { images: [{ url: "" }] } }),
   ).toThrow("no media in fal result");
 });
+
+test("extractMediaUrl captures image dimensions when present", () => {
+  const r = {
+    data: { images: [{ url: "https://fal/i.png", width: 1024, height: 768 }] },
+  };
+  expect(extractMediaUrl("image", r)).toEqual({
+    url: "https://fal/i.png",
+    width: 1024,
+    height: 768,
+  });
+});
