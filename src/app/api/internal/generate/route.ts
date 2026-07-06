@@ -211,23 +211,33 @@ export async function POST(req: NextRequest) {
 
   // Re-read spentCredits immediately before the increment to shrink the lost-update window
   // (InstantDB has no atomic increment; residual concurrency is bounded by the per-run cap — accepted per plan Global Constraints).
-  const freshRun = (await db.query({ agentRuns: { $: { where: { runId } } } }))
-    .agentRuns?.[0];
-  const freshSpent =
-    typeof freshRun?.spentCredits === "number"
-      ? freshRun.spentCredits
-      : run.spentCredits;
-  await db.transact([
-    db.tx.agentGenerations[genId].update({
-      status: "completed",
-      assetId,
-      credits: estimate.totalCredits,
-      cost: estimate.totalCostUsd,
-    }),
-    db.tx.agentRuns[run.id].update({
-      spentCredits: freshSpent + estimate.totalCredits,
-    }),
-  ]);
+  try {
+    const freshRun = (
+      await db.query({ agentRuns: { $: { where: { runId } } } })
+    ).agentRuns?.[0];
+    const freshSpent =
+      typeof freshRun?.spentCredits === "number"
+        ? freshRun.spentCredits
+        : run.spentCredits;
+    await db.transact([
+      db.tx.agentGenerations[genId].update({
+        status: "completed",
+        assetId,
+        credits: estimate.totalCredits,
+        cost: estimate.totalCostUsd,
+      }),
+      db.tx.agentRuns[run.id].update({
+        spentCredits: freshSpent + estimate.totalCredits,
+      }),
+    ]);
+  } catch (e) {
+    // Asset is already persisted (and possibly charged) — media was delivered, so do NOT fail the request.
+    // In this rare final-write failure the row may remain 'running'; logged for operational cleanup (v2 sweep).
+    console.error(
+      "[agent-generate] final status/accounting update failed after successful generation",
+      { runId, endpoint, genId, error: String(e) },
+    );
+  }
 
   return NextResponse.json({
     assetId,
