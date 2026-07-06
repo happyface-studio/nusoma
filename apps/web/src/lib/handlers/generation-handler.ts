@@ -392,8 +392,7 @@ const handleVideoGeneration = async ({
       (a) => !("isVideo" in a),
     ) as PlacedImage;
     const firstVideo = referencedAssets.find((a) => "isVideo" in a) as
-      | PlacedVideo
-      | undefined;
+      PlacedVideo | undefined;
 
     if (modelId === "kling-video-v2.6-pro-motion-control") {
       const imageInput = firstImage || selectedImages[0];
@@ -493,8 +492,7 @@ const handleVideoGeneration = async ({
   } else if (modelConfig.category === "video-to-video") {
     // Handle Video-to-Video (e.g. LTX)
     const firstVideo = referencedAssets.find((a) => "isVideo" in a) as
-      | PlacedVideo
-      | undefined;
+      PlacedVideo | undefined;
 
     // For V2V, the "imageUrl" param in TRPC is used for the input video URL
     if (firstVideo) {

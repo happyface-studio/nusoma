@@ -43,7 +43,7 @@ export default function Dashboard() {
   const { data, isLoading } = db.useQuery({
     canvasProjects: {
       $: {
-        where: { "user.id": user?.id },
+        where: { "user.id": user?.id } as { "user.id": string },
         order: { lastModified: "desc" },
       },
       elements: {},

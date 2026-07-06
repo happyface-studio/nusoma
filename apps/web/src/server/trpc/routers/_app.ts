@@ -671,7 +671,9 @@ export const appRouter = router({
                 update.status === "IN_PROGRESS"
               ) {
                 const percentage =
-                  update.logs?.reduce((acc, log) => {
+                  (
+                    update as { logs?: Array<{ message: string }> }
+                  ).logs?.reduce((acc: number, log: { message: string }) => {
                     const match = log.message.match(/(\d+)%/);
                     return match ? parseInt(match[1]) : acc;
                   }, 0) || 0;
