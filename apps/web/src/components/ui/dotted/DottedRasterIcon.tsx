@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { useMemo, useState, useEffect, memo, useRef } from "react";
+// @ts-expect-error react-dom/server resolves to the untyped server.node.js entry under this module resolution config
 import { renderToString } from "react-dom/server";
 import { cn } from "@/lib/utils";
 

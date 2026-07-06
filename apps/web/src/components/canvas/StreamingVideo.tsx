@@ -69,8 +69,6 @@ export const StreamingVideo: React.FC<StreamingVideoProps> = ({
           ),
         ),
         ...(apiKey ? { apiKey } : {}),
-        userId: generation.userId,
-        sessionId: generation.sessionId,
       },
       {
         enabled: true,
@@ -128,8 +126,6 @@ export const StreamingVideo: React.FC<StreamingVideoProps> = ({
         duration: generation.duration || 3,
         styleId: generation.styleId,
         ...(apiKey ? { apiKey } : {}),
-        userId: generation.userId,
-        sessionId: generation.sessionId,
         aspectRatio: getAspectRatio(generation.imageSize),
       },
       {

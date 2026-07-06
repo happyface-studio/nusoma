@@ -248,10 +248,7 @@ export default function OverlayPage() {
 
   // Query user credits from Polar (refetched after generation completes)
   const { data: creditsData, refetch: refetchCredits } = useQuery(
-    trpc.getUserCredits.queryOptions(
-      { userId: user?.id || "" },
-      { enabled: !!user?.id },
-    ),
+    trpc.getUserCredits.queryOptions(undefined, { enabled: !!user?.id }),
   );
   const userCredits = creditsData?.credits ?? 0;
 
@@ -1876,8 +1873,6 @@ export default function OverlayPage() {
         : "image";
     await startAgentRun({
       projectId,
-      userId: user?.id,
-      sessionId: sessionId || undefined,
       brief: generationSettings.prompt ?? "",
       kind,
       aspectRatio: generationSettings.imageSize,
@@ -2468,7 +2463,6 @@ export default function OverlayPage() {
               key={imageId}
               imageId={imageId}
               generation={generation}
-              userId={user?.id}
               onStreamingUpdate={(id, url) => {
                 setImages((prev) =>
                   prev.map((img) =>

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { EventSource } from "extended-eventsource";
+import { authHeader } from "@/lib/auth/authToken";
 
 export type AgentEvent = { type: string; data?: any };
 
@@ -17,8 +19,6 @@ export function useAgentRun() {
   const start = useCallback(
     async (args: {
       projectId: string;
-      userId?: string;
-      sessionId?: string;
       brief: string;
       kind?: "image" | "video";
       aspectRatio?: string;
@@ -32,9 +32,14 @@ export function useAgentRun() {
 
       const res = await fetch("/api/agent/run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: { "content-type": "application/json", ...authHeader() },
         body: JSON.stringify(args),
       });
+      if (!res.ok) {
+        doneRef.current = true;
+        setStatus("failed");
+        return;
+      }
       const { eveSessionId } = await res.json();
       if (!eveSessionId) {
         doneRef.current = true;
@@ -43,8 +48,12 @@ export function useAgentRun() {
       }
 
       const open = () => {
+        // projectId authorizes the stream server-side (owner + session match);
+        // the Bearer header authenticates. disableRetry keeps our cursor-based
+        // reconnect (below) the single source of reconnection truth.
         const es = new EventSource(
-          `/api/agent/stream/${eveSessionId}?startIndex=${indexRef.current}`,
+          `/api/agent/stream/${eveSessionId}?startIndex=${indexRef.current}&projectId=${encodeURIComponent(args.projectId)}`,
+          { headers: authHeader(), disableRetry: true },
         );
         esRef.current = es;
         es.onmessage = (m) => {
@@ -64,8 +73,9 @@ export function useAgentRun() {
         };
         es.onerror = () => {
           es.close();
-          // Reconnect from the cursor while the run is still active, with a backoff so a
-          // down agent isn't hammered. A run ends naturally via session.completed/failed.
+          // Reconnect from the cursor while the run is still active, with a
+          // backoff so a down agent isn't hammered. A run ends naturally via
+          // session.completed/failed.
           if (!doneRef.current) setTimeout(open, 1500);
         };
       };

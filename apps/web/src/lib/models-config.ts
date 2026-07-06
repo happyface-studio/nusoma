@@ -15,11 +15,17 @@ import type {
   ImageModelConfig,
   ImageGenerationType,
   VideoModelConfig,
+  VideoModelOption,
   UtilityModelConfig,
   VideoGenerationType,
   CommonSizeOption,
 } from "@/types/models";
 import { ImageModes, VideoModes } from "@/types/models";
+
+// Re-export the video model types so consumers can import them directly
+// from this module (matches the existing import pattern used across
+// src/components/canvas/*).
+export type { VideoModelConfig, VideoModelOption };
 import type {
   KlingTextToVideoInput,
   KlingImageToVideoInput,
