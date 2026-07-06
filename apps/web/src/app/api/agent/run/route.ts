@@ -8,11 +8,10 @@ import {
   agentHeaders,
   type EveSessionState,
 } from "@/lib/agent/eve-client";
+import { verifyRequestUser, AuthError } from "@/lib/auth/verify";
 
 const BodySchema = z.object({
   projectId: z.string().min(1),
-  userId: z.string().optional(),
-  sessionId: z.string().optional(),
   brief: z.string(),
   kind: z.enum(["image", "video"]).optional(),
   aspectRatio: z.string().optional(),
@@ -21,6 +20,16 @@ const BodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    let user: { id: string; email: string | null };
+    try {
+      user = await verifyRequestUser(req);
+    } catch (e) {
+      if (e instanceof AuthError) {
+        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      }
+      throw e;
+    }
+
     const parsed = BodySchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -30,10 +39,12 @@ export async function POST(req: NextRequest) {
     }
     const body = parsed.data;
 
-    // Confirm the project exists before minting anything (InstantDB .update is an
-    // upsert, so a bad projectId would otherwise create a phantom canvasProjects row).
+    // Existence + ownership in one indexed query: a project the caller does not
+    // own returns nothing (404), which also avoids leaking that it exists.
     const projQ = await db.query({
-      canvasProjects: { $: { where: { id: body.projectId } } },
+      canvasProjects: {
+        $: { where: { id: body.projectId, "user.id": user.id } },
+      },
     });
     const project = projQ.canvasProjects?.[0];
     if (!project) {
@@ -42,19 +53,15 @@ export async function POST(req: NextRequest) {
     const saved = (project as { eveSessionState?: EveSessionState })
       .eveSessionState;
 
-    const billingUser: BillingUser = {
-      userId: body.userId,
-      sessionId: body.sessionId,
-    };
+    const billingUser: BillingUser = { userId: user.id };
     const remainingCredits = await getUserCredits(billingUser);
 
-    // Mint the opaque run token; store identity + cap accounting.
+    // Mint the opaque run token; store the verified identity + cap accounting.
     const runId = id();
     await db.transact([
       db.tx.agentRuns[id()].update({
         runId,
-        userId: body.userId,
-        sessionId: body.sessionId,
+        userId: user.id,
         projectId: body.projectId,
         spentCredits: 0,
         status: "active",
