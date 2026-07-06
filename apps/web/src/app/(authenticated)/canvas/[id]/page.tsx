@@ -1876,8 +1876,6 @@ export default function OverlayPage() {
         : "image";
     await startAgentRun({
       projectId,
-      userId: user?.id,
-      sessionId: sessionId || undefined,
       brief: generationSettings.prompt ?? "",
       kind,
       aspectRatio: generationSettings.imageSize,
