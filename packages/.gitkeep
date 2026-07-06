@@ -1,0 +1,3 @@
+# Shared workspace packages live here. Empty by design — see
+# docs/superpowers/specs/2026-07-06-monorepo-migration-design.md §2.
+# Add a package only when web/agent (or a future RN app) genuinely share code.
