@@ -1,9 +1,10 @@
+import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
+import { z } from "zod";
 import { createFalClient } from "@fal-ai/client";
 import { db } from "@/lib/instant-admin";
 import { id } from "@instantdb/admin";
 import { appConfig } from "@/lib/config";
-import { estimateFalCost } from "@/lib/fal-pricing";
 import {
   checkCreditsForGeneration,
   processGenerationCharge,
@@ -20,22 +21,35 @@ const fal = createFalClient({
   credentials: () => process.env.FAL_KEY as string,
 });
 
+function secretOk(header: string | null): boolean {
+  const expected = process.env.NUSOMA_SERVICE_SECRET ?? "";
+  if (!header || header.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(header), Buffer.from(expected));
+}
+
+const BodySchema = z.object({
+  runId: z.string().min(1),
+  endpoint: z.string().min(1),
+  input: z.record(z.string(), z.unknown()),
+  kind: z.enum(["image", "video"]),
+  prompt: z.string().optional(),
+  referencedAssetIds: z.array(z.string()).optional(),
+});
+
 export async function POST(req: NextRequest) {
-  if (
-    req.headers.get("x-nusoma-secret") !== process.env.NUSOMA_SERVICE_SECRET
-  ) {
+  if (!secretOk(req.headers.get("x-nusoma-secret"))) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const body = await req.json();
-  const { runId, endpoint, input, kind, prompt, referencedAssetIds } = body as {
-    runId: string;
-    endpoint: string;
-    input: Record<string, unknown>;
-    kind: "image" | "video";
-    prompt?: string;
-    referencedAssetIds?: string[];
-  };
+  const parsed = BodySchema.safeParse(await req.json());
+  if (!parsed.success) {
+    return NextResponse.json(
+      { error: "bad_request", detail: parsed.error.flatten() },
+      { status: 400 },
+    );
+  }
+  const { runId, endpoint, input, kind, prompt, referencedAssetIds } =
+    parsed.data;
 
   // Resolve identity + run from the opaque runId (never trust model-supplied identity).
   const runQ = await db.query({ agentRuns: { $: { where: { runId } } } });
@@ -62,9 +76,20 @@ export async function POST(req: NextRequest) {
       idempotent: true,
     });
   }
+  if (prior?.status === "running") {
+    // A concurrent identical call is already in flight — do not double-run or double-charge.
+    return NextResponse.json({ error: "in_progress" }, { status: 409 });
+  }
+  // prior is 'failed' or absent → proceed (row id reused below if a failed prior exists).
 
-  // Price + cap + credit checks.
-  const estimate = await estimateFalCost(endpoint, 1);
+  // Price once, then cap + credit checks against that single estimate.
+  const check = await checkCreditsForGeneration(
+    billingUser,
+    endpoint,
+    1,
+    false,
+  );
+  const estimate = check.costEstimate;
   if (
     capExceeded(
       run.spentCredits,
@@ -81,12 +106,6 @@ export async function POST(req: NextRequest) {
       { status: 402 },
     );
   }
-  const check = await checkCreditsForGeneration(
-    billingUser,
-    endpoint,
-    1,
-    false,
-  );
   if (!check.canProceed) {
     return NextResponse.json(
       {
@@ -143,32 +162,70 @@ export async function POST(req: NextRequest) {
   }
 
   // Persist server-side, then charge (asset exists even if charge later fails).
-  const assetId = await persistAgentAsset({
-    url: media.url,
-    kind,
-    prompt: prompt ?? "",
-    creditsConsumed: estimate.totalCredits,
-    durationSeconds: media.durationSeconds,
-    userId: run.userId,
-    sessionId: run.sessionId,
-    referencedAssetIds,
-  });
+  let assetId: string;
+  try {
+    assetId = await persistAgentAsset({
+      url: media.url,
+      kind,
+      prompt: prompt ?? "",
+      creditsConsumed: estimate.totalCredits,
+      durationSeconds: media.durationSeconds,
+      userId: run.userId,
+      sessionId: run.sessionId,
+      referencedAssetIds,
+    });
+  } catch (e) {
+    await db.transact([
+      db.tx.agentGenerations[genId].update({ status: "failed" }),
+    ]);
+    return NextResponse.json(
+      { error: "generation_failed", detail: String(e) },
+      { status: 502 },
+    );
+  }
 
-  const charge = await processGenerationCharge(billingUser, estimate, {
-    generation_type: "agent",
-    model: endpoint,
-    run_id: runId,
-  });
+  let charged = false;
+  let remainingCredits: number | null = null;
+  try {
+    const charge = await processGenerationCharge(billingUser, estimate, {
+      generation_type: "agent",
+      model: endpoint,
+      run_id: runId,
+    });
+    charged = charge.success === true;
+    remainingCredits = charge.newBalance ?? null;
+    if (!charged) {
+      console.error("[agent-generate] Polar charge failed", {
+        runId,
+        endpoint,
+        error: charge.error,
+      });
+    }
+  } catch (e) {
+    console.error("[agent-generate] Polar charge threw", {
+      runId,
+      endpoint,
+      error: String(e),
+    });
+  }
 
+  // Re-read spentCredits immediately before the increment to shrink the lost-update window
+  // (InstantDB has no atomic increment; residual concurrency is bounded by the per-run cap — accepted per plan Global Constraints).
+  const freshRun = (await db.query({ agentRuns: { $: { where: { runId } } } }))
+    .agentRuns?.[0];
+  const freshSpent =
+    typeof freshRun?.spentCredits === "number"
+      ? freshRun.spentCredits
+      : run.spentCredits;
   await db.transact([
     db.tx.agentGenerations[genId].update({
       status: "completed",
       assetId,
-      credits: charge.creditsCharged ?? estimate.totalCredits,
+      credits: estimate.totalCredits,
       cost: estimate.totalCostUsd,
     }),
     db.tx.agentRuns[run.id].update({
-      spentCredits: run.spentCredits + estimate.totalCredits,
+      spentCredits: freshSpent + estimate.totalCredits,
     }),
   ]);
 
@@ -176,7 +233,8 @@ export async function POST(req: NextRequest) {
     assetId,
     url: media.url,
     cost: estimate.totalCostUsd,
-    credits: charge.creditsCharged ?? estimate.totalCredits,
-    remainingCredits: charge.newBalance,
+    credits: estimate.totalCredits,
+    remainingCredits,
+    charged,
   });
 }
