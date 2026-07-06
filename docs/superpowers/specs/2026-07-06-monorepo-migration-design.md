@@ -38,7 +38,7 @@ nusoma/                        ← git root = monorepo root (thin)
   package.json                 ← workspaces + turbo scripts; husky/lint-staged here
   turbo.json                   ← pipeline: dev (no cache), build/typecheck/lint (cached)
   bun.lock                     ← THE single lockfile
-  tsconfig.base.json           ← optional shared compiler defaults (see §5)
+  tsconfig.base.json           ← shared strictness defaults (see §5); each app extends it
   apps/
     web/                       ← everything at root today moves here wholesale
       src/  public/  content/
@@ -88,16 +88,36 @@ nusoma/                        ← git root = monorepo root (thin)
    - content-collections config, `next.config.ts`, `postcss.config.mjs`,
      `components.json`, `@/*` alias → stay inside `apps/web`.
    - `.eve/` → gitignored (already done on base branch).
-5. **`tsconfig.base.json` (optional, thin):** only if both apps already share
-   compiler options worth hoisting; otherwise skip (YAGNI). Each app keeps its
-   own `tsconfig.json` extending the base if present.
+5. **`tsconfig.base.json` (thin, shared):** holds only the compiler options
+   both apps already set identically — the genuine overlap, nothing forced:
+
+   ```jsonc
+   // tsconfig.base.json (repo root)
+   {
+     "compilerOptions": {
+       "strict": true,
+       "esModuleInterop": true,
+       "skipLibCheck": true,
+     },
+   }
+   ```
+
+   Each app's `tsconfig.json` gains `"extends": "../../tsconfig.base.json"` and
+   drops those three lines; everything env-specific stays local — web keeps
+   `target: ES2017`, `moduleResolution: bundler`, `jsx`, `paths`, the next
+   plugin, `composite`/`declaration`; agent keeps `target: ES2022`,
+   `module`/`moduleResolution: NodeNext`, `types: ["node"]`, `noEmit`, its
+   `include`. The base is the one place to raise strictness for both later.
+
 6. **Deployment:** update the two Vercel projects' Root Directory to
    `apps/web` and `apps/agent` (one-time dashboard change, documented in the
    plan — not automated).
 
 ## 6. What we are NOT doing (deliberate cuts)
 
-- No `packages/*` scaffolding (no shared tsconfig/eslint/ui packages).
+- No `packages/*` workspace packages (no shared eslint/ui/config _packages_).
+  The root `tsconfig.base.json` is a plain root file both apps extend — not a
+  workspace package — so it does not count against this.
 - No CI rewrite beyond fixing paths that assume root = app.
 - No dependency de-duplication/hoisting cleanup beyond what bun does itself.
 - No change to app source logic — this is a move + wiring change only.
