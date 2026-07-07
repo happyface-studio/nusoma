@@ -21,7 +21,6 @@ import { getDefaultStyle } from "@/lib/prompt-actions";
 import { useToast } from "@/hooks/use-toast";
 
 // Import extracted components
-import { StreamingImage } from "@/components/canvas/StreamingImage";
 import { StreamingVideo } from "@/components/canvas/StreamingVideo";
 import { CropOverlayWrapper } from "@/components/canvas/CropOverlayWrapper";
 import { CanvasImage } from "@/components/canvas/CanvasImage";
@@ -38,7 +37,6 @@ import type {
   PlacedVideo,
   GenerationSettings,
   VideoGenerationSettings,
-  ActiveGeneration,
   ActiveVideoGeneration,
   SelectionBox,
 } from "@/types/canvas";
@@ -76,7 +74,7 @@ import { useAgentRun } from "@/hooks/useAgentRun";
 import { findOpenSpot, dimsForOutput, type Rect } from "@/lib/canvas-placement";
 
 // Import handlers
-import { uploadImageDirect } from "@/lib/handlers/generation-handler";
+import { uploadImageDirect } from "@/lib/handlers/generation-helpers";
 import { handleRemoveBackground as handleRemoveBackgroundHandler } from "@/lib/handlers/background-handler";
 import { useParams } from "next/navigation";
 
@@ -108,10 +106,6 @@ export default function OverlayPage() {
       loraUrl: defaultStyle.loraUrl || "",
       styleId: defaultStyle.id,
     });
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [activeGenerations, setActiveGenerations] = useState<
-    Map<string, ActiveGeneration>
-  >(new Map());
   const [activeVideoGenerations, setActiveVideoGenerations] = useState<
     Map<string, ActiveVideoGeneration>
   >(new Map());
@@ -754,7 +748,6 @@ export default function OverlayPage() {
         setIsConvertingToVideo(false);
         setSelectedImageForVideo(null);
       }
-      setIsGenerating(false);
     } catch (error) {
       console.error("Error completing video generation:", error);
 
@@ -783,7 +776,6 @@ export default function OverlayPage() {
 
       setIsConvertingToVideo(false);
       setSelectedImageForVideo(null);
-      setIsGenerating(false);
     }
   };
 
@@ -825,7 +817,6 @@ export default function OverlayPage() {
       setIsTransformingVideo(false);
       setIsExtendingVideo(false);
     }
-    setIsGenerating(false);
   };
 
   // Function to handle video generation progress
@@ -1262,21 +1253,13 @@ export default function OverlayPage() {
   // Auto-save to storage when images or videos change (with debounce)
   useEffect(() => {
     if (!isStorageLoaded) return; // Don't save until we've loaded
-    if (activeGenerations.size > 0) return;
 
     const timeoutId = setTimeout(() => {
       saveToStorage();
     }, 500); // Reduced to 500ms for faster saving
 
     return () => clearTimeout(timeoutId);
-  }, [
-    images,
-    videos,
-    viewport,
-    isStorageLoaded,
-    saveToStorage,
-    activeGenerations.size,
-  ]);
+  }, [images, videos, viewport, isStorageLoaded, saveToStorage]);
 
   // Save canvas assets when page visibility changes
   useEffect(() => {
@@ -2273,7 +2256,7 @@ export default function OverlayPage() {
         !isInputElement
       ) {
         e.preventDefault();
-        if (!isGenerating && generationSettings.prompt.trim()) {
+        if (generationSettings.prompt.trim()) {
           handleRun();
         }
       }
@@ -2397,99 +2380,6 @@ export default function OverlayPage() {
 
       {/* Main Canvas Area */}
       <div className="flex-1 flex flex-col overflow-hidden">
-        {/* Render streaming components for active generations */}
-        {Array.from(activeGenerations.entries()).map(
-          ([imageId, generation]) => (
-            <StreamingImage
-              key={imageId}
-              imageId={imageId}
-              generation={generation}
-              onStreamingUpdate={(id, url) => {
-                setImages((prev) =>
-                  prev.map((img) =>
-                    img.id === id ? { ...img, src: url } : img,
-                  ),
-                );
-              }}
-              onStateChange={(id, state) => {
-                setActiveGenerations((prev) => {
-                  const newMap = new Map(prev);
-                  const gen = newMap.get(id);
-                  if (gen) {
-                    newMap.set(id, { ...gen, state });
-                  }
-                  return newMap;
-                });
-              }}
-              onComplete={(id, finalUrl) => {
-                // Refetch credits after generation completes
-                refetchCredits();
-
-                // Get the generation data to attach metadata
-                const generation = activeGenerations.get(id);
-                setImages((prev) =>
-                  prev.map((img) =>
-                    img.id === id
-                      ? {
-                          ...img,
-                          src: finalUrl,
-                          generationPrompt: generation?.prompt,
-                          // Credits info not available from API yet
-                          creditsConsumed: undefined,
-                          referencedAssetIds: generation?.referencedAssetIds,
-                        }
-                      : img,
-                  ),
-                );
-
-                // Set success state first
-                setActiveGenerations((prev) => {
-                  const newMap = new Map(prev);
-                  const gen = newMap.get(id);
-                  if (gen) {
-                    newMap.set(id, { ...gen, state: "success" });
-                  }
-                  return newMap;
-                });
-
-                // Show success state for 1.5 seconds, then clean up
-                setTimeout(() => {
-                  setActiveGenerations((prev) => {
-                    const newMap = new Map(prev);
-                    newMap.delete(id);
-                    return newMap;
-                  });
-                  setIsGenerating(false);
-
-                  // Save to history for undo/redo
-                  saveToHistory();
-
-                  // Immediately save after generation completes
-                  setTimeout(() => {
-                    saveToStorage();
-                  }, 100); // Small delay to ensure state updates are processed
-                }, 1500);
-              }}
-              onError={(id, error) => {
-                console.error(`Generation error for ${id}:`, error);
-                // Remove the failed image
-                setImages((prev) => prev.filter((img) => img.id !== id));
-                setActiveGenerations((prev) => {
-                  const newMap = new Map(prev);
-                  newMap.delete(id);
-                  return newMap;
-                });
-                setIsGenerating(false);
-                toast.add({
-                  title: "Generation failed",
-                  description: error.toString(),
-                  type: "error",
-                });
-              }}
-            />
-          ),
-        )}
-
         {/* Main content */}
         <main className="flex-1 relative flex items-center justify-center w-full">
           <div className="relative w-full h-full">
@@ -2641,20 +2531,6 @@ export default function OverlayPage() {
                         {/* Selection box */}
                         <SelectionBoxComponent selectionBox={selectionBox} />
 
-                        {/* Render generating placeholders for images */}
-                        {images
-                          .filter((image) => activeGenerations.has(image.id))
-                          .map((image) => {
-                            const generation = activeGenerations.get(image.id);
-                            return (
-                              <GeneratingPlaceholder
-                                key={`placeholder-${image.id}`}
-                                image={image}
-                                outputType="image"
-                                state={generation?.state || "running"}
-                              />
-                            );
-                          })}
                         {/* Render generating placeholders for videos */}
                         {videos
                           .filter((video) => {
@@ -2696,12 +2572,6 @@ export default function OverlayPage() {
                         {/* Render images */}
                         {images
                           .filter((image) => {
-                            // Don't render images that are currently generating
-                            // (they'll be shown as placeholders instead)
-                            if (activeGenerations.has(image.id)) {
-                              return false;
-                            }
-
                             // Performance optimization: only render visible images
                             const buffer = 100; // pixels buffer
                             const viewBounds = {
@@ -3118,7 +2988,7 @@ export default function OverlayPage() {
                 selectedIds={selectedIds}
                 images={images}
                 videos={videos}
-                isGenerating={isGenerating}
+                isGenerating={false}
                 generationSettings={generationSettings}
                 isolateInputValue={isolateInputValue}
                 isIsolating={isIsolating}
@@ -3147,7 +3017,7 @@ export default function OverlayPage() {
               <MobileToolbar
                 selectedIds={selectedIds}
                 images={images}
-                isGenerating={isGenerating}
+                isGenerating={false}
                 generationSettings={generationSettings}
                 handleRun={handleRun}
                 handleDuplicate={handleDuplicate}
@@ -3233,20 +3103,9 @@ export default function OverlayPage() {
               setGenerationSettings={setGenerationSettings}
               selectedIds={selectedIds}
               images={images}
-              isGenerating={isGenerating}
-              generationState={
-                Array.from(activeGenerations.values()).some(
-                  (g) => g.state === "success",
-                )
-                  ? "success"
-                  : Array.from(activeGenerations.values()).some(
-                        (g) => g.state === "running",
-                      )
-                    ? "running"
-                    : isGenerating
-                      ? "submitting" // Default to submitting when generation just started
-                      : "running"
-              }
+              isGenerating={false}
+              // ponytail: legacy streaming path deleted; wire agentStatus here when the Run button should reflect runs.
+              generationState="running"
               handleRun={handleRun}
               handleFileUpload={handleFileUpload}
               toast={toast}

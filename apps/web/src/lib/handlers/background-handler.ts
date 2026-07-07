@@ -1,5 +1,5 @@
 import type { PlacedImage } from "@/types/canvas";
-import { uploadImageDirect } from "./generation-handler";
+import { uploadImageDirect } from "./generation-helpers";
 
 interface BackgroundHandlerDeps {
   images: PlacedImage[];
