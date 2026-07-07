@@ -1,20 +1,17 @@
-import { randomUUID } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/lib/instant-admin";
 import { id } from "@instantdb/admin";
 import { getUserCredits, type BillingUser } from "@/server/billing";
-import { resolveRunIdentity } from "@/lib/agent/run-auth";
 import {
   AGENT_URL,
   agentHeaders,
   type EveSessionState,
 } from "@/lib/agent/eve-client";
+import { verifyRequestUser, AuthError } from "@/lib/auth/verify";
 
 const BodySchema = z.object({
   projectId: z.string().min(1),
-  // Guest session cookie; only honoured if it matches the project's sessionId.
-  sessionId: z.string().optional(),
   brief: z.string(),
   kind: z.enum(["image", "video"]).optional(),
   aspectRatio: z.string().optional(),
@@ -34,6 +31,16 @@ const BodySchema = z.object({
 
 export async function POST(req: NextRequest) {
   try {
+    let user: { id: string; email: string | null };
+    try {
+      user = await verifyRequestUser(req);
+    } catch (e) {
+      if (e instanceof AuthError) {
+        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+      }
+      throw e;
+    }
+
     const parsed = BodySchema.safeParse(await req.json());
     if (!parsed.success) {
       return NextResponse.json(
@@ -43,64 +50,29 @@ export async function POST(req: NextRequest) {
     }
     const body = parsed.data;
 
-    // Authed callers prove who they are with their InstantDB refresh token;
-    // billing identity is NEVER taken from the request body.
-    let verifiedUserId: string | undefined;
-    const authz = req.headers.get("authorization");
-    if (authz?.startsWith("Bearer ")) {
-      try {
-        verifiedUserId = (await db.auth.verifyToken(authz.slice(7)))?.id;
-      } catch {
-        verifiedUserId = undefined;
-      }
-      if (!verifiedUserId) {
-        return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-      }
-    }
-
-    // Confirm the project exists before minting anything (InstantDB .update is an
-    // upsert, so a bad projectId would otherwise create a phantom canvasProjects row).
+    // Existence + ownership in one indexed query: a project the caller does not
+    // own returns nothing (404), which also avoids leaking that it exists.
     const projQ = await db.query({
-      canvasProjects: { $: { where: { id: body.projectId } }, user: {} },
+      canvasProjects: {
+        $: { where: { id: body.projectId, "user.id": user.id } },
+      },
     });
     const project = projQ.canvasProjects?.[0];
     if (!project) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
-
-    const ownerLink = (project as { user?: { id: string } | { id: string }[] })
-      .user;
-    const identity = resolveRunIdentity(
-      {
-        ownerUserId: Array.isArray(ownerLink)
-          ? ownerLink[0]?.id
-          : ownerLink?.id,
-        projectSessionId: (project as { sessionId?: string }).sessionId,
-      },
-      verifiedUserId,
-      body.sessionId,
-    );
-    if (!identity.ok) {
-      return NextResponse.json({ error: "forbidden" }, { status: 403 });
-    }
-
     const saved = (project as { eveSessionState?: EveSessionState })
       .eveSessionState;
 
-    const billingUser: BillingUser = {
-      userId: identity.userId,
-      sessionId: identity.sessionId,
-    };
+    const billingUser: BillingUser = { userId: user.id };
     const remainingCredits = await getUserCredits(billingUser);
 
-    // Mint the opaque run token; store identity + cap accounting.
+    // Mint the opaque run token; store the verified identity + cap accounting.
     const runId = id();
-    const runRowId = id();
     await db.transact([
-      db.tx.agentRuns[runRowId].update({
+      db.tx.agentRuns[id()].update({
         runId,
-        userId: identity.userId,
-        sessionId: identity.sessionId,
+        userId: user.id,
         projectId: body.projectId,
         spentCredits: 0,
         createdAt: new Date(),
@@ -157,11 +129,6 @@ export async function POST(req: NextRequest) {
       continuationToken?: string;
     };
 
-    // Capability token for /api/agent/stream: only the caller who started the
-    // run receives it, and the stream route requires it (agentRuns perms deny
-    // client reads, so it can't be queried out of the DB).
-    const streamToken = randomUUID();
-
     const state: EveSessionState = {
       sessionId: eveSessionId ?? undefined,
       continuationToken: data.continuationToken ?? saved?.continuationToken,
@@ -169,13 +136,9 @@ export async function POST(req: NextRequest) {
     };
     await db.transact([
       db.tx.canvasProjects[body.projectId].update({ eveSessionState: state }),
-      db.tx.agentRuns[runRowId].update({
-        eveSessionId: eveSessionId ?? undefined,
-        streamToken,
-      }),
     ]);
 
-    return NextResponse.json({ runId, eveSessionId, streamToken });
+    return NextResponse.json({ runId, eveSessionId });
   } catch (e) {
     console.error("[agent-run] unhandled error", { error: String(e) });
     return NextResponse.json({ error: "internal_error" }, { status: 500 });

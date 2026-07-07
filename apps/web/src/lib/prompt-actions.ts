@@ -24,12 +24,7 @@ import {
 // -----------------------------------------------------------------------------
 
 export type PromptActionCategory =
-  | "style"
-  | "camera"
-  | "lighting"
-  | "composition"
-  | "mood"
-  | "effects";
+  "style" | "camera" | "lighting" | "composition" | "mood" | "effects";
 
 export interface PromptAction {
   id: string;

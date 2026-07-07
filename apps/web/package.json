@@ -64,6 +64,7 @@
     "embla-carousel-autoplay": "^8.6.0",
     "embla-carousel-react": "^8.6.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "extended-eventsource": "^2.1.0",
     "fabric": "^6.9.1",
     "form": "^0.2.5",
     "geist": "^1.7.2",

@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { EventSource } from "extended-eventsource";
+import { authHeader } from "@/lib/auth/authToken";
 
 export type AgentEvent = { type: string; data?: any };
 
@@ -17,9 +19,6 @@ export function useAgentRun() {
   const start = useCallback(
     async (args: {
       projectId: string;
-      // InstantDB refresh token; proves the caller's identity to /api/agent/run.
-      authToken?: string;
-      sessionId?: string;
       brief: string;
       kind?: "image" | "video";
       aspectRatio?: string;
@@ -32,25 +31,30 @@ export function useAgentRun() {
       setEvents([]);
       setStatus("running");
 
-      const { authToken, ...body } = args;
       const res = await fetch("/api/agent/run", {
         method: "POST",
-        headers: {
-          "content-type": "application/json",
-          ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
-        },
-        body: JSON.stringify(body),
+        headers: { "content-type": "application/json", ...authHeader() },
+        body: JSON.stringify(args),
       });
-      const { eveSessionId, streamToken } = await res.json();
-      if (!eveSessionId || !streamToken) {
+      if (!res.ok) {
+        doneRef.current = true;
+        setStatus("failed");
+        return;
+      }
+      const { eveSessionId } = await res.json();
+      if (!eveSessionId) {
         doneRef.current = true;
         setStatus("failed");
         return;
       }
 
       const open = () => {
+        // projectId authorizes the stream server-side (owner + session match);
+        // the Bearer header authenticates. disableRetry keeps our cursor-based
+        // reconnect (below) the single source of reconnection truth.
         const es = new EventSource(
-          `/api/agent/stream/${eveSessionId}?startIndex=${indexRef.current}&token=${streamToken}`,
+          `/api/agent/stream/${eveSessionId}?startIndex=${indexRef.current}&projectId=${encodeURIComponent(args.projectId)}`,
+          { headers: authHeader(), disableRetry: true },
         );
         esRef.current = es;
         es.onmessage = (m) => {
@@ -70,8 +74,9 @@ export function useAgentRun() {
         };
         es.onerror = () => {
           es.close();
-          // Reconnect from the cursor while the run is still active, with a backoff so a
-          // down agent isn't hammered. A run ends naturally via session.completed/failed.
+          // Reconnect from the cursor while the run is still active, with a
+          // backoff so a down agent isn't hammered. A run ends naturally via
+          // session.completed/failed.
           if (!doneRef.current) setTimeout(open, 1500);
         };
       };

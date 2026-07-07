@@ -9,6 +9,8 @@ import {
   httpSubscriptionLink,
   createTRPCClient,
 } from "@trpc/client";
+import { EventSource as HeaderEventSource } from "extended-eventsource";
+import { authHeader } from "@/lib/auth/authToken";
 import superjson from "superjson";
 import { makeQueryClient } from "@/lib/query-client";
 import { AppRouter } from "@/server/trpc/routers/_app";
@@ -40,6 +42,10 @@ export function CoreProviders({ children }: { children: ReactNode }) {
           true: httpSubscriptionLink({
             transformer: superjson,
             url: getUrl(),
+            // Native EventSource can't send headers; this ponyfill can. The
+            // callback is read per (re)connection, so the current token is used.
+            EventSource: HeaderEventSource,
+            eventSourceOptions: () => ({ headers: authHeader() }),
           }),
           false: httpBatchLink({
             transformer: superjson,
@@ -47,6 +53,7 @@ export function CoreProviders({ children }: { children: ReactNode }) {
             headers() {
               return {
                 "x-trpc-source": "client",
+                ...authHeader(),
               };
             },
           }),

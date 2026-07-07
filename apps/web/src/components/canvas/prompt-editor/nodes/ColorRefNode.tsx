@@ -59,7 +59,13 @@ export const ColorRefNode = Node.create({
           const start = range.from;
           const end = range.to;
 
-          tr.replaceWith(start, end, this.type.create(attributes));
+          // `this.type.create(...)` and `tr.replaceWith` resolve to two
+          // duplicate-but-different installed versions of prosemirror-model
+          // (1.25.4 vs 1.25.9) in node_modules, so their `Node` types are
+          // structurally incompatible to TS even though they're the same
+          // shape at runtime. Cast locally rather than deduping the
+          // dependency tree.
+          tr.replaceWith(start, end, this.type.create(attributes) as any);
           tr.insertText(" "); // Add a space after the node
         },
       }),

@@ -106,10 +106,7 @@ export default function AppLayout({
   // Query user credits from Polar
   const trpc = useTRPC();
   const { data: creditsData } = useQuery(
-    trpc.getUserCredits.queryOptions(
-      { userId: user?.id || "" },
-      { enabled: !!user?.id },
-    ),
+    trpc.getUserCredits.queryOptions(undefined, { enabled: !!user?.id }),
   );
   const userCredits = creditsData?.credits ?? 0;
 

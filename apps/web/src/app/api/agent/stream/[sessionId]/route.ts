@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { AGENT_URL, agentHeaders } from "@/lib/agent/eve-client";
 import { db } from "@/lib/instant-admin";
+import { verifyRequestUser, AuthError } from "@/lib/auth/verify";
 
 export async function GET(
   req: NextRequest,
@@ -17,18 +18,30 @@ export async function GET(
     });
   }
 
-  // Bind the stream to a run: the caller must present the streamToken that
-  // /api/agent/run handed only to the run's creator. Without this, anyone who
-  // learned an eve session id could read another user's agent activity.
-  const token = req.nextUrl.searchParams.get("token") ?? "";
-  const run = /^[A-Za-z0-9_-]{16,128}$/.test(token)
-    ? (
-        await db.query({
-          agentRuns: { $: { where: { streamToken: token } } },
-        })
-      ).agentRuns?.[0]
-    : undefined;
-  if (!run || run.eveSessionId !== sessionId) {
+  // Authenticate the caller.
+  let user: { id: string; email: string | null };
+  try {
+    user = await verifyRequestUser(req);
+  } catch (e) {
+    if (e instanceof AuthError) {
+      return new Response('event: error\ndata: "unauthorized"\n\n', {
+        status: 401,
+        headers: { "Content-Type": "text/event-stream" },
+      });
+    }
+    throw e;
+  }
+
+  // Bind the stream to a project the caller owns whose current eve session is
+  // exactly this sessionId. projectId is client-supplied but fully verified:
+  // the owner filter + the stored-session match together prove authorization.
+  const projectId = req.nextUrl.searchParams.get("projectId") ?? "";
+  const ownQ = await db.query({
+    canvasProjects: { $: { where: { id: projectId, "user.id": user.id } } },
+  });
+  const project = ownQ.canvasProjects?.[0] as
+    { eveSessionState?: { sessionId?: string } } | undefined;
+  if (!project || project.eveSessionState?.sessionId !== sessionId) {
     return new Response('event: error\ndata: "forbidden"\n\n', {
       status: 403,
       headers: { "Content-Type": "text/event-stream" },
