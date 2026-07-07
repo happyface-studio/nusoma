@@ -73,8 +73,14 @@ const _schema = i.schema({
       sessionId: i.string().optional().indexed(),
       projectId: i.string().indexed(),
       spentCredits: i.number(),
-      status: i.string().indexed(), // 'active' | 'done' | 'failed'
       createdAt: i.date().indexed(),
+      // eve session this run streams from; binds /api/agent/stream to the run.
+      eveSessionId: i.string().optional().indexed(),
+      // Bearer token for /api/agent/stream. Admin-written; agentRuns perms deny
+      // all client reads, so this never leaves the server except to the run's creator.
+      streamToken: i.string().optional().indexed(),
+      // { x, y, width, height } the client reserved for the run's first asset.
+      plannedPlacement: i.json().optional(),
     }),
     agentGenerations: i.entity({
       idempotencyKey: i.string().unique().indexed(),

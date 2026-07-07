@@ -14,6 +14,8 @@ import {
   extractMediaUrl,
   idempotencyKeyFor,
   capExceeded,
+  errorDetail,
+  isRetryableFalError,
 } from "@/lib/agent/generate-core";
 import { persistAgentAsset } from "@/lib/agent/persist-asset";
 
@@ -130,19 +132,26 @@ export async function POST(req: NextRequest) {
     }),
   ]);
 
-  // Run fal (one retry).
+  // Run fal (one retry, but only when a retry can possibly succeed).
   let result: unknown;
   try {
     result = await fal.subscribe(endpoint, { input, logs: true });
-  } catch {
-    try {
-      result = await fal.subscribe(endpoint, { input, logs: true });
-    } catch (e) {
+  } catch (e) {
+    let failure = e;
+    if (isRetryableFalError(e)) {
+      try {
+        result = await fal.subscribe(endpoint, { input, logs: true });
+        failure = null;
+      } catch (e2) {
+        failure = e2;
+      }
+    }
+    if (failure) {
       await db.transact([
         db.tx.agentGenerations[genId].update({ status: "failed" }),
       ]);
       return NextResponse.json(
-        { error: "generation_failed", detail: String(e) },
+        { error: "generation_failed", detail: errorDetail(failure) },
         { status: 502 },
       );
     }
@@ -181,6 +190,8 @@ export async function POST(req: NextRequest) {
       userId: run.userId,
       sessionId: run.sessionId,
       referencedAssetIds,
+      placement: (run as { plannedPlacement?: { x?: number; y?: number } })
+        .plannedPlacement,
     });
   } catch (e) {
     await db.transact([

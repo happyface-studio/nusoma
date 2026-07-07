@@ -23,6 +23,7 @@ export function useAgentRun() {
       kind?: "image" | "video";
       aspectRatio?: string;
       referencedAssetIds?: string[];
+      placement?: { x: number; y: number; width: number; height: number };
     }) => {
       esRef.current?.close();
       doneRef.current = false;

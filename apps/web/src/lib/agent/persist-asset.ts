@@ -1,5 +1,6 @@
 import { db } from "@/lib/instant-admin";
 import { id } from "@instantdb/admin";
+import { findOpenSpot, type Rect } from "@/lib/canvas-placement";
 
 // Downloads a fal media URL, stores it in InstantDB via the ADMIN client, and places it on the
 // canvas. Creates BOTH a canvasAssets row (file + user + lineage) AND a canvasElements row linked
@@ -17,6 +18,9 @@ export async function persistAgentAsset(opts: {
   userId?: string;
   sessionId?: string;
   referencedAssetIds?: string[];
+  // Spot the client reserved on click (and drew the placeholder at). Used as the
+  // preferred position so the asset lands exactly where the placeholder was.
+  placement?: { x?: number; y?: number };
 }): Promise<string> {
   const assetId = id();
   const elementId = id();
@@ -31,17 +35,33 @@ export async function persistAgentAsset(opts: {
   const path = `canvas-${opts.kind}s/${owner}/${assetId}`;
   const { data } = await db.storage.uploadFile(path, buffer, { contentType });
 
-  // Stagger placement so agent outputs don't stack exactly on top of each other.
+  // Place the asset in an open spot so it never lands on top of existing canvas
+  // content (the old `count % 8` stagger overlapped whatever was already there).
   const projQ = await db.query({
     canvasProjects: { $: { where: { id: opts.projectId } }, elements: {} },
   });
-  const count =
-    (projQ.canvasProjects?.[0] as { elements?: unknown[] } | undefined)
-      ?.elements?.length ?? 0;
+  const elements =
+    ((projQ.canvasProjects?.[0] as { elements?: unknown[] } | undefined)
+      ?.elements as
+      | Array<{ x?: number; y?: number; width?: number; height?: number }>
+      | undefined) ?? [];
+  const count = elements.length;
   const width = opts.width ?? (opts.kind === "image" ? 1024 : 1280);
   const height = opts.height ?? (opts.kind === "image" ? 1024 : 720);
-  const x = 80 + (count % 8) * 56;
-  const y = 80 + (count % 8) * 56;
+  const existing: Rect[] = elements
+    .filter((e) => typeof e.x === "number" && typeof e.y === "number")
+    .map((e) => ({
+      x: e.x as number,
+      y: e.y as number,
+      width: e.width ?? 1024,
+      height: e.height ?? 1024,
+    }));
+  const preferred =
+    typeof opts.placement?.x === "number" &&
+    typeof opts.placement?.y === "number"
+      ? { x: opts.placement.x, y: opts.placement.y }
+      : undefined;
+  const { x, y } = findOpenSpot(existing, width, height, preferred);
 
   const assetTx = db.tx.canvasAssets[assetId]
     .update({

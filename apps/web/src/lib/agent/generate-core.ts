@@ -52,6 +52,31 @@ export function idempotencyKeyFor(
   return createHash("sha256").update(canonical).digest("hex");
 }
 
+// Turn a thrown error into the most actionable value we can hand back to the
+// agent. @fal-ai/client throws ValidationError with message "Unprocessable
+// Entity" (useless) but a rich `body.detail` (which field is wrong and why) —
+// String(e) drops it, leaving the agent to blindly guess. Prefer body.detail,
+// then body, then message, then String(e).
+export function errorDetail(e: unknown): unknown {
+  if (e && typeof e === "object") {
+    const body = (e as { body?: unknown }).body;
+    if (body && typeof body === "object") {
+      const detail = (body as { detail?: unknown }).detail;
+      return detail ?? body;
+    }
+    const message = (e as { message?: unknown }).message;
+    if (typeof message === "string" && message.length > 0) return message;
+  }
+  return String(e);
+}
+
+// Whether a failed fal call is worth one retry: network errors and 5xx are;
+// 4xx (validation, bad input) will fail identically and just waste a paid call.
+export function isRetryableFalError(e: unknown): boolean {
+  const status = (e as { status?: unknown } | null)?.status;
+  return typeof status !== "number" || status >= 500;
+}
+
 export function capExceeded(
   spentCredits: number,
   nextCredits: number,

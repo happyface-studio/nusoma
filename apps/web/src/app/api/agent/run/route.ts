@@ -16,6 +16,17 @@ const BodySchema = z.object({
   kind: z.enum(["image", "video"]).optional(),
   aspectRatio: z.string().optional(),
   referencedAssetIds: z.array(z.string()).optional(),
+  // Canvas spot the client reserved for this run's first asset (see
+  // findOpenSpot). Stored on the run so persistAgentAsset can place the asset
+  // exactly where the loading placeholder is drawn.
+  placement: z
+    .object({
+      x: z.number(),
+      y: z.number(),
+      width: z.number(),
+      height: z.number(),
+    })
+    .optional(),
 });
 
 export async function POST(req: NextRequest) {
@@ -64,8 +75,8 @@ export async function POST(req: NextRequest) {
         userId: user.id,
         projectId: body.projectId,
         spentCredits: 0,
-        status: "active",
         createdAt: new Date(),
+        ...(body.placement ? { plannedPlacement: body.placement } : {}),
       }),
     ]);
 
