@@ -9,7 +9,7 @@ import { useAuth } from "@/providers/auth-provider";
 import { id } from "@instantdb/react";
 
 import { Button } from "@/components/ui/button";
-import { Plus, Undo, Redo, SlidersHorizontal } from "lucide-react";
+import { Undo, Redo } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useTRPC } from "@/trpc/client";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -17,24 +17,15 @@ import NumberFlow from "@number-flow/react";
 import { DiamondsFourIcon } from "@phosphor-icons/react";
 import { useRef, useEffect } from "react";
 import { ContextMenu, ContextMenuTrigger } from "@/components/ui/context-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-} from "@/components/ui/dialog";
-import { styleActions, getDefaultStyle } from "@/lib/prompt-actions";
+import { getDefaultStyle } from "@/lib/prompt-actions";
 import { useToast } from "@/hooks/use-toast";
 
 // Import extracted components
-//import { ShortcutBadge } from "@/components/canvas/ShortcutBadge";
 import { StreamingImage } from "@/components/canvas/StreamingImage";
 import { StreamingVideo } from "@/components/canvas/StreamingVideo";
 import { CropOverlayWrapper } from "@/components/canvas/CropOverlayWrapper";
 import { CanvasImage } from "@/components/canvas/CanvasImage";
 import { CanvasVideo } from "@/components/canvas/CanvasVideo";
-//import { VideoControls } from "@/components/canvas/VideoControls";
 import { ImageToVideoDialog } from "@/components/canvas/ImageToVideoDialog";
 import { VideoToVideoDialog } from "@/components/canvas/VideoToVideoDialog";
 import { ExtendVideoDialog } from "@/components/canvas/ExtendVideoDialog";
@@ -68,12 +59,10 @@ import { useCanvasSnapping } from "@/hooks/useCanvasSnapping";
 import { CanvasGrid } from "@/components/canvas/CanvasGrid";
 import { SelectionBoxComponent } from "@/components/canvas/SelectionBox";
 import { SnapGuideLines } from "@/components/canvas/SnapGuideLines";
-//import { MiniMap } from "@/components/canvas/MiniMap";
 import { ZoomControls } from "@/components/canvas/ZoomControls";
 import { MobileToolbar } from "@/components/canvas/MobileToolbar";
 import { CanvasContextMenu } from "@/components/canvas/CanvasContextMenu";
 import { CanvasLeftSidebar } from "@/components/canvas/CanvasLeftSidebar";
-//import { CanvasRightSidebar } from "@/components/canvas/CanvasRightSidebar";
 import { VideoOverlays } from "@/components/canvas/VideoOverlays";
 import { DimensionDisplay } from "@/components/canvas/DimensionDisplay";
 import {
@@ -82,7 +71,6 @@ import {
 } from "@/components/canvas/PromptEditor";
 import { GeneratingPlaceholder } from "@/components/canvas/GeneratingPlaceholder";
 import { SettingsDialog } from "@/components/canvas/SettingsDialog";
-import Image from "next/image";
 import { db } from "@/lib/db";
 import { useAgentRun } from "@/hooks/useAgentRun";
 import { findOpenSpot, dimsForOutput, type Rect } from "@/lib/canvas-placement";
@@ -111,9 +99,6 @@ export default function OverlayPage() {
   const [videos, setVideos] = useState<PlacedVideo[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isStorageLoaded, setIsStorageLoaded] = useState(false);
-  // const [visibleIndicators, setVisibleIndicators] = useState<Set<string>>(
-  //   new Set(),
-  // );
   const defaultStyle = getDefaultStyle();
   const toast = useToast();
 
@@ -123,9 +108,6 @@ export default function OverlayPage() {
       loraUrl: defaultStyle.loraUrl || "",
       styleId: defaultStyle.id,
     });
-  const [previousStyleId, setPreviousStyleId] = useState<string>(
-    defaultStyle.id,
-  );
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeGenerations, setActiveGenerations] = useState<
     Map<string, ActiveGeneration>
@@ -170,8 +152,6 @@ export default function OverlayPage() {
   const [isolateInputValue, setIsolateInputValue] = useState("");
   const [isIsolating, setIsIsolating] = useState(false);
   const [showGrid, setShowGrid] = useState(true);
-  //const [showMinimap, setShowMinimap] = useState(true);
-  const [isStyleDialogOpen, setIsStyleDialogOpen] = useState(false);
   const [isImageToVideoDialogOpen, setIsImageToVideoDialogOpen] =
     useState(false);
   const [selectedImageForVideo, setSelectedImageForVideo] = useState<
@@ -199,8 +179,6 @@ export default function OverlayPage() {
   ] = useState<string | null>(null);
   const [isRemovingVideoBackground, setIsRemovingVideoBackground] =
     useState(false);
-  const [_, setIsSaving] = useState(false);
-  const [showSuccess, setShowSuccess] = useState(false);
 
   // Touch event states for mobile
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(
@@ -211,41 +189,6 @@ export default function OverlayPage() {
     y: number;
   } | null>(null);
   const [isTouchingImage, setIsTouchingImage] = useState(false);
-
-  // Track when generation completes
-  const [previousGenerationCount, setPreviousGenerationCount] = useState(0);
-
-  useEffect(() => {
-    const currentCount =
-      activeGenerations.size +
-      activeVideoGenerations.size +
-      (isGenerating ? 1 : 0) +
-      (isRemovingVideoBackground ? 1 : 0) +
-      (isIsolating ? 1 : 0) +
-      (isExtendingVideo ? 1 : 0) +
-      (isTransformingVideo ? 1 : 0);
-
-    // If we went from having generations to having none, show success
-    if (previousGenerationCount > 0 && currentCount === 0) {
-      setShowSuccess(true);
-      // Hide success after 2 seconds
-      const timeout = setTimeout(() => {
-        setShowSuccess(false);
-      }, 2000);
-      return () => clearTimeout(timeout);
-    }
-
-    setPreviousGenerationCount(currentCount);
-  }, [
-    activeGenerations.size,
-    activeVideoGenerations.size,
-    isGenerating,
-    isRemovingVideoBackground,
-    isIsolating,
-    isExtendingVideo,
-    isTransformingVideo,
-    previousGenerationCount,
-  ]);
 
   // Create FAL client instance with proxy
   const falClient = useFalClient();
@@ -906,8 +849,6 @@ export default function OverlayPage() {
   // Save current state to storage
   const saveToStorage = useCallback(async () => {
     try {
-      setIsSaving(true);
-
       // Save actual image data to InstantDB
       const imageSavePromises = images.map(async (image) => {
         try {
@@ -985,11 +926,8 @@ export default function OverlayPage() {
         viewport: viewport,
       };
       await canvasStorage.saveCanvasState(canvasState);
-
-      // Brief delay to show the indicator
-      setTimeout(() => setIsSaving(false), 300);
     } catch (error) {
-      setIsSaving(false);
+      console.error("[CANVAS] Failed to save canvas state:", error);
     }
   }, [images, videos, viewport]);
 
@@ -1275,35 +1213,10 @@ export default function OverlayPage() {
     }
   }, []);
 
-  // Load minimap setting from localStorage on mount
-  //useEffect(() => {
-  //  const savedShowMinimap = localStorage.getItem("showMinimap");
-  //  if (savedShowMinimap !== null) {
-  //    setShowMinimap(savedShowMinimap === "true");
-  //  }
-  //}, []);
-
   // Save grid setting to localStorage when it changes
   useEffect(() => {
     localStorage.setItem("showGrid", showGrid.toString());
   }, [showGrid]);
-
-  // Save minimap setting to localStorage when it changes
-  //useEffect(() => {
-  //  localStorage.setItem("showMinimap", showMinimap.toString());
-  //}, [showMinimap]);
-
-  // Track previous style when changing styles (but not when reverting from custom)
-  useEffect(() => {
-    const currentStyleId = generationSettings.styleId;
-    if (
-      currentStyleId &&
-      currentStyleId !== "custom" &&
-      currentStyleId !== previousStyleId
-    ) {
-      setPreviousStyleId(currentStyleId);
-    }
-  }, [generationSettings.styleId, previousStyleId]);
 
   // Set canvas ready state after mount
   useEffect(() => {
@@ -1381,69 +1294,6 @@ export default function OverlayPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [isStorageLoaded, saveToStorage]);
-
-  // Helper function to resize image if too large
-  const resizeImageIfNeeded = async (
-    dataUrl: string,
-    maxWidth: number = 2048,
-    maxHeight: number = 2048,
-  ): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new window.Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => {
-        // Check if resize is needed
-        if (img.width <= maxWidth && img.height <= maxHeight) {
-          resolve(dataUrl);
-          return;
-        }
-
-        // Calculate new dimensions
-        let newWidth = img.width;
-        let newHeight = img.height;
-        const aspectRatio = img.width / img.height;
-
-        if (newWidth > maxWidth) {
-          newWidth = maxWidth;
-          newHeight = newWidth / aspectRatio;
-        }
-        if (newHeight > maxHeight) {
-          newHeight = maxHeight;
-          newWidth = newHeight * aspectRatio;
-        }
-
-        // Create canvas and resize
-        const canvas = document.createElement("canvas");
-        canvas.width = newWidth;
-        canvas.height = newHeight;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) {
-          reject(new Error("Failed to get canvas context"));
-          return;
-        }
-
-        ctx.drawImage(img, 0, 0, newWidth, newHeight);
-
-        // Convert to data URL with compression
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error("Failed to create blob"));
-              return;
-            }
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-          },
-          "image/jpeg",
-          0.9, // 90% quality
-        );
-      };
-      img.onerror = () => reject(new Error("Failed to load image"));
-      img.src = dataUrl;
-    });
-  };
 
   // Helper function to create a cropped image
   const createCroppedImage = async (
@@ -2249,57 +2099,10 @@ export default function OverlayPage() {
 
       // Use the segmented image URL directly (backend already applied the mask)
       if (result.url) {
-        console.log("Original image URL:", image.src);
-        console.log("New isolated image URL:", result.url);
-        console.log("Result object:", JSON.stringify(result, null, 2));
-
-        // AUTO DOWNLOAD FOR DEBUGGING
-        try {
-          const link = document.createElement("a");
-          link.href = result.url;
-          link.download = `isolated-${isolateInputValue}-${Date.now()}.png`;
-          link.target = "_blank"; // Open in new tab to see the image
-          document.body.appendChild(link);
-          link.click();
-          document.body.removeChild(link);
-          console.log("Auto-downloaded isolated image for debugging");
-        } catch (e) {
-          console.error("Failed to auto-download:", e);
-        }
-
         // Force load the new image before updating state
         const testImg = new window.Image();
         testImg.crossOrigin = "anonymous";
         testImg.onload = () => {
-          console.log(
-            "New image loaded successfully:",
-            testImg.width,
-            "x",
-            testImg.height,
-          );
-
-          // Create a test canvas to verify the image has transparency
-          const testCanvas = document.createElement("canvas");
-          testCanvas.width = testImg.width;
-          testCanvas.height = testImg.height;
-          const testCtx = testCanvas.getContext("2d");
-          if (testCtx) {
-            // Fill with red background
-            testCtx.fillStyle = "red";
-            testCtx.fillRect(0, 0, testCanvas.width, testCanvas.height);
-            // Draw the image on top
-            testCtx.drawImage(testImg, 0, 0);
-
-            // Get a pixel from what should be transparent area (corner)
-            const pixelData = testCtx.getImageData(0, 0, 1, 1).data;
-            console.log("Corner pixel (should show red if transparent):", {
-              r: pixelData[0],
-              g: pixelData[1],
-              b: pixelData[2],
-              a: pixelData[3],
-            });
-          }
-
           // Update the image in place with the segmented image
           saveToHistory();
 
@@ -3461,17 +3264,6 @@ export default function OverlayPage() {
               }}
             />
 
-            {/* Mini-map -- Disabled for now
-          {showMinimap && (
-            <MiniMap
-              images={images}
-              videos={videos}
-              viewport={viewport}
-              canvasSize={canvasSize}
-            />
-          )}
-          */}
-
             {/* Zoom controls */}
             <ZoomControls
               viewport={viewport}
@@ -3489,94 +3281,6 @@ export default function OverlayPage() {
             />
           </div>
         </main>
-
-        {/* Style Selection Dialog */}
-        <Dialog open={isStyleDialogOpen} onOpenChange={setIsStyleDialogOpen}>
-          <DialogContent className="w-[95vw] max-w-4xl max-h-[80vh] overflow-hidden">
-            <DialogHeader>
-              <DialogTitle>Choose a Style</DialogTitle>
-              <DialogDescription>
-                Select a style to apply to your images or choose Custom to use
-                your own LoRA
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="relative">
-              {/* Fixed gradient overlays outside scrollable area */}
-              <div className="pointer-events-none absolute -top-px left-0 right-0 z-30 h-2 md:h-12 bg-linear-to-b from-background via-background/90 to-transparent" />
-              <div className="pointer-events-none absolute -bottom-px left-0 right-0 z-30 h-2 md:h-12 bg-linear-to-t from-background via-background/90 to-transparent" />
-
-              {/* Scrollable content container */}
-              <div className="overflow-y-auto max-h-[60vh] px-1">
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4 pt-4 pb-6 md:pt-8 md:pb-12">
-                  {/* Custom option */}
-                  <button
-                    onClick={() => {
-                      setGenerationSettings({
-                        ...generationSettings,
-                        loraUrl: "",
-                        prompt: "",
-                        styleId: "custom",
-                      });
-                      setIsStyleDialogOpen(false);
-                    }}
-                    className={cn(
-                      "group relative flex flex-col items-center gap-2 p-3 rounded-xl border",
-                      generationSettings.styleId === "custom"
-                        ? "border-primary bg-primary/10"
-                        : "border-border hover:border-primary/50",
-                    )}
-                  >
-                    <div className="w-full aspect-square rounded-lg bg-muted flex items-center justify-center">
-                      <Plus className="h-8 w-8 text-muted-foreground" />
-                    </div>
-                    <span className="text-sm font-medium">Custom</span>
-                  </button>
-
-                  {/* Predefined styles */}
-                  {styleActions.map((action) => (
-                    <button
-                      key={action.id}
-                      onClick={() => {
-                        setGenerationSettings({
-                          ...generationSettings,
-                          loraUrl: action.loraUrl || "",
-                          prompt: action.prompt,
-                          styleId: action.id,
-                        });
-                        setIsStyleDialogOpen(false);
-                      }}
-                      className={cn(
-                        "group relative flex flex-col items-center gap-2 p-3 rounded-xl border",
-                        generationSettings.styleId === action.id
-                          ? "border-primary bg-primary/10"
-                          : "border-border hover:border-primary/50",
-                      )}
-                    >
-                      <div className="relative w-full aspect-square rounded-lg overflow-hidden">
-                        {action.previewImage && (
-                          <Image
-                            src={action.previewImage}
-                            alt={action.name}
-                            width={200}
-                            height={200}
-                            className="w-full h-full object-cover"
-                          />
-                        )}
-                        {generationSettings.styleId === action.id && (
-                          <div className="absolute inset-0 bg-primary/20 flex items-center justify-center"></div>
-                        )}
-                      </div>
-                      <span className="text-sm font-medium text-center">
-                        {action.name}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
 
         {/* Image to Video Dialog */}
         <ImageToVideoDialog
@@ -3674,37 +3378,6 @@ export default function OverlayPage() {
           setVideos={setVideos}
         />
       </div>
-
-      {/* Right Sidebar - Hidden on mobile 
-      <div className="hidden lg:block">
-        <CanvasRightSidebar
-          selectedIds={selectedIds}
-          images={images}
-          videos={videos}
-          isGenerating={isGenerating}
-          generationSettings={generationSettings}
-          isolateInputValue={isolateInputValue}
-          isIsolating={isIsolating}
-          handleRun={handleRun}
-          handleDuplicate={handleDuplicate}
-          handleRemoveBackground={handleRemoveBackground}
-          handleCombineImages={handleCombineImages}
-          handleDelete={handleDelete}
-          handleIsolate={handleIsolate}
-          handleConvertToVideo={handleConvertToVideo}
-          handleVideoToVideo={handleVideoToVideo}
-          handleExtendVideo={handleExtendVideo}
-          handleRemoveVideoBackground={handleRemoveVideoBackground}
-          setCroppingImageId={setCroppingImageId}
-          setIsolateInputValue={setIsolateInputValue}
-          setIsolateTarget={setIsolateTarget}
-          sendToFront={sendToFront}
-          sendToBack={sendToBack}
-          bringForward={bringForward}
-          sendBackward={sendBackward}
-        />
-      </div>
-    */}
     </div>
   );
 }
