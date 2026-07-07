@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { AGENT_URL, agentHeaders } from "@/lib/agent/eve-client";
+import { db } from "@/lib/instant-admin";
 
 export async function GET(
   req: NextRequest,
@@ -12,6 +13,24 @@ export async function GET(
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(sessionId)) {
     return new Response('event: error\ndata: "bad session id"\n\n', {
       status: 400,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+
+  // Bind the stream to a run: the caller must present the streamToken that
+  // /api/agent/run handed only to the run's creator. Without this, anyone who
+  // learned an eve session id could read another user's agent activity.
+  const token = req.nextUrl.searchParams.get("token") ?? "";
+  const run = /^[A-Za-z0-9_-]{16,128}$/.test(token)
+    ? (
+        await db.query({
+          agentRuns: { $: { where: { streamToken: token } } },
+        })
+      ).agentRuns?.[0]
+    : undefined;
+  if (!run || run.eveSessionId !== sessionId) {
+    return new Response('event: error\ndata: "forbidden"\n\n', {
+      status: 403,
       headers: { "Content-Type": "text/event-stream" },
     });
   }

@@ -12,9 +12,13 @@ export function agentHeaders(): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
   };
-  // Optional route-auth for the eve HTTP channel (set AGENT_AUTH_TOKEN if the agent requires it).
-  if (process.env.AGENT_AUTH_TOKEN) {
-    headers["authorization"] = `Bearer ${process.env.AGENT_AUTH_TOKEN}`;
+  // Server-to-server auth for the eve HTTP channel: HTTP Basic shared secret,
+  // verified by the agent's httpBasic("nusoma-web") channel (constant-time).
+  // Set the same value as AGENT_AUTH_TOKEN on the agent. See
+  // apps/agent/agent/channels/eve.ts. Locally (localDev) the agent ignores it.
+  const token = process.env.AGENT_AUTH_TOKEN;
+  if (token) {
+    headers["authorization"] = `Basic ${btoa(`nusoma-web:${token}`)}`;
   }
   return headers;
 }

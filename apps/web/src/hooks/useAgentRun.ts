@@ -17,12 +17,14 @@ export function useAgentRun() {
   const start = useCallback(
     async (args: {
       projectId: string;
-      userId?: string;
+      // InstantDB refresh token; proves the caller's identity to /api/agent/run.
+      authToken?: string;
       sessionId?: string;
       brief: string;
       kind?: "image" | "video";
       aspectRatio?: string;
       referencedAssetIds?: string[];
+      placement?: { x: number; y: number; width: number; height: number };
     }) => {
       esRef.current?.close();
       doneRef.current = false;
@@ -30,13 +32,17 @@ export function useAgentRun() {
       setEvents([]);
       setStatus("running");
 
+      const { authToken, ...body } = args;
       const res = await fetch("/api/agent/run", {
         method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(args),
+        headers: {
+          "content-type": "application/json",
+          ...(authToken ? { authorization: `Bearer ${authToken}` } : {}),
+        },
+        body: JSON.stringify(body),
       });
-      const { eveSessionId } = await res.json();
-      if (!eveSessionId) {
+      const { eveSessionId, streamToken } = await res.json();
+      if (!eveSessionId || !streamToken) {
         doneRef.current = true;
         setStatus("failed");
         return;
@@ -44,7 +50,7 @@ export function useAgentRun() {
 
       const open = () => {
         const es = new EventSource(
-          `/api/agent/stream/${eveSessionId}?startIndex=${indexRef.current}`,
+          `/api/agent/stream/${eveSessionId}?startIndex=${indexRef.current}&token=${streamToken}`,
         );
         esRef.current = es;
         es.onmessage = (m) => {

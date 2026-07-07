@@ -70,6 +70,13 @@ export function errorDetail(e: unknown): unknown {
   return String(e);
 }
 
+// Whether a failed fal call is worth one retry: network errors and 5xx are;
+// 4xx (validation, bad input) will fail identically and just waste a paid call.
+export function isRetryableFalError(e: unknown): boolean {
+  const status = (e as { status?: unknown } | null)?.status;
+  return typeof status !== "number" || status >= 500;
+}
+
 export function capExceeded(
   spentCredits: number,
   nextCredits: number,

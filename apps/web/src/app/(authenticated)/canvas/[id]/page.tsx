@@ -82,10 +82,10 @@ import {
 } from "@/components/canvas/PromptEditor";
 import { GeneratingPlaceholder } from "@/components/canvas/GeneratingPlaceholder";
 import { SettingsDialog } from "@/components/canvas/SettingsDialog";
-import { AgentLogOverlay } from "@/components/canvas/AgentLogOverlay";
 import Image from "next/image";
 import { db } from "@/lib/db";
 import { useAgentRun } from "@/hooks/useAgentRun";
+import { findOpenSpot, dimsForOutput, type Rect } from "@/lib/canvas-placement";
 
 // Import handlers
 import { uploadImageDirect } from "@/lib/handlers/generation-handler";
@@ -96,11 +96,17 @@ export default function OverlayPage() {
   const { user, sessionId } = useAuth();
   const params = useParams();
   const projectId = params?.id as string;
-  const {
-    start: startAgentRun,
-    events: agentEvents,
-    status: agentStatus,
-  } = useAgentRun();
+  const { start: startAgentRun, status: agentStatus } = useAgentRun();
+  // The single slot reserved for the current agent run: drives the in-canvas
+  // loading placeholder AND is sent to the server so the asset lands in the exact
+  // same spot. null when no run is in flight.
+  const [generatingSlot, setGeneratingSlot] = useState<{
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+    kind: "image" | "video";
+  } | null>(null);
   const [images, setImages] = useState<PlacedImage[]>([]);
   const [videos, setVideos] = useState<PlacedVideo[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -1227,6 +1233,43 @@ export default function OverlayPage() {
     });
   }, [project?.elements, isStorageLoaded]);
 
+  // Drive the in-canvas loading animation (GeneratingPlaceholder) from the agent's
+  // event stream — one placeholder per `generate` that's been requested but hasn't
+  // returned yet. When the generate finishes, the real asset arrives via the
+  // reactive merge above and the placeholder count drops back to zero.
+  // ponytail: pairs generate requests to results by shape (toolName / assetId /
+  // error) and assumes `generate` is the only canvas-affecting tool — true for eve
+  // today. Position mirrors persistAgentAsset's stagger so the placeholder lands
+  // where the asset will; size defaults to the server's 1024² image default.
+  // Clear the reserved slot the moment its asset lands. The server places the
+  // asset at the slot's exact position, so an element appearing there is the
+  // hand-off signal — the placeholder disappears as the real asset takes its
+  // place, with no gap and no jump. findOpenSpot guaranteed the slot was empty at
+  // reservation, so nothing else can be sitting there.
+  useEffect(() => {
+    if (!generatingSlot) return;
+    const landed = [...images, ...videos].some(
+      (el) =>
+        Math.abs(el.x - generatingSlot.x) < 1 &&
+        Math.abs(el.y - generatingSlot.y) < 1,
+    );
+    if (landed) setGeneratingSlot(null);
+  }, [images, videos, generatingSlot]);
+
+  // Safety net: never leave a placeholder stuck. On failure clear immediately; on
+  // completion give the reactive query a beat to deliver the asset (which clears
+  // the slot above) before clearing a run that produced nothing.
+  useEffect(() => {
+    if (agentStatus === "failed") {
+      setGeneratingSlot(null);
+      return;
+    }
+    if (agentStatus === "done") {
+      const t = setTimeout(() => setGeneratingSlot(null), 800);
+      return () => clearTimeout(t);
+    }
+  }, [agentStatus]);
+
   // Load grid setting from localStorage on mount
   useEffect(() => {
     const savedShowGrid = localStorage.getItem("showGrid");
@@ -1954,14 +1997,29 @@ export default function OverlayPage() {
       getVideoModelById(generationSettings.modelId)
         ? "video"
         : "image";
+
+    // Reserve a correctly-sized, non-overlapping spot up front so the loading
+    // placeholder appears instantly on click and the server can place the asset
+    // in the exact same place (sent as `placement`).
+    const { width, height } = dimsForOutput(generationSettings.imageSize, kind);
+    const occupied: Rect[] = [...images, ...videos].map((el) => ({
+      x: el.x,
+      y: el.y,
+      width: el.width,
+      height: el.height,
+    }));
+    const { x, y } = findOpenSpot(occupied, width, height);
+    setGeneratingSlot({ x, y, width, height, kind });
+
     await startAgentRun({
       projectId,
-      userId: user?.id,
+      authToken: user?.refresh_token,
       sessionId: sessionId || undefined,
       brief: generationSettings.prompt ?? "",
       kind,
       aspectRatio: generationSettings.imageSize,
       referencedAssetIds: generationSettings.referencedAssetIds,
+      placement: { x, y, width, height },
     });
   };
 
@@ -2819,6 +2877,24 @@ export default function OverlayPage() {
                               outputType="video"
                             />
                           ))}
+                        {/* Agent-driven in-canvas loading animation. Shown at the
+                            slot reserved on click (correctly sized, non-overlapping),
+                            where the finished asset will land. */}
+                        {generatingSlot && (
+                          <GeneratingPlaceholder
+                            image={{
+                              id: "agent-placeholder",
+                              src: "",
+                              rotation: 0,
+                              x: generatingSlot.x,
+                              y: generatingSlot.y,
+                              width: generatingSlot.width,
+                              height: generatingSlot.height,
+                            }}
+                            outputType={generatingSlot.kind}
+                            state="running"
+                          />
+                        )}
 
                         {/* Render images */}
                         {images
@@ -3416,12 +3492,6 @@ export default function OverlayPage() {
               )}
               viewport={viewport}
               isDragging={isDraggingImage}
-            />
-
-            {/* Agent run log overlay */}
-            <AgentLogOverlay
-              events={agentEvents}
-              visible={agentStatus !== "idle"}
             />
           </div>
         </main>

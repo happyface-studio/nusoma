@@ -4,7 +4,19 @@ import {
   idempotencyKeyFor,
   capExceeded,
   errorDetail,
+  isRetryableFalError,
 } from "./generate-core";
+
+test("isRetryableFalError: 4xx never retries, 5xx and network errors do", () => {
+  expect(isRetryableFalError(Object.assign(new Error(), { status: 422 }))).toBe(
+    false,
+  );
+  expect(isRetryableFalError(Object.assign(new Error(), { status: 500 }))).toBe(
+    true,
+  );
+  expect(isRetryableFalError(new Error("fetch failed"))).toBe(true);
+  expect(isRetryableFalError(null)).toBe(true);
+});
 
 test("errorDetail surfaces fal validation body.detail, not the opaque message", () => {
   // Shape thrown by @fal-ai/client on a 422: message is useless, body.detail is actionable.
