@@ -1,4 +1,4 @@
-import "@/app/mdx.css";
+import "@/app/styles/mdx.css";
 
 import * as React from "react";
 import { Metadata } from "next";

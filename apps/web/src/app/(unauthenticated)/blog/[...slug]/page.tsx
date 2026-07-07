@@ -1,4 +1,4 @@
-import "@/app/mdx.css";
+import "@/app/styles/mdx.css";
 
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
