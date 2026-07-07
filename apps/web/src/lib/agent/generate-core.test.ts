@@ -3,7 +3,30 @@ import {
   extractMediaUrl,
   idempotencyKeyFor,
   capExceeded,
+  errorDetail,
 } from "./generate-core";
+
+test("errorDetail surfaces fal validation body.detail, not the opaque message", () => {
+  // Shape thrown by @fal-ai/client on a 422: message is useless, body.detail is actionable.
+  const falErr = Object.assign(new Error("Unprocessable Entity"), {
+    status: 422,
+    body: {
+      detail: [
+        { type: "missing", loc: ["body", "prompt"], msg: "Field required" },
+      ],
+    },
+  });
+  const d = errorDetail(falErr) as Array<{ msg: string }>;
+  expect(Array.isArray(d)).toBe(true);
+  expect(d[0].msg).toBe("Field required");
+});
+
+test("errorDetail falls back to message, then String(e)", () => {
+  expect(errorDetail(new Error("no media in fal result"))).toBe(
+    "no media in fal result",
+  );
+  expect(errorDetail("boom")).toBe("boom");
+});
 
 test("extractMediaUrl reads fal image shape", () => {
   const r = { data: { images: [{ url: "https://fal/img.png" }] } };

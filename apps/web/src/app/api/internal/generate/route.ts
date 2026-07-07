@@ -14,6 +14,7 @@ import {
   extractMediaUrl,
   idempotencyKeyFor,
   capExceeded,
+  errorDetail,
 } from "@/lib/agent/generate-core";
 import { persistAgentAsset } from "@/lib/agent/persist-asset";
 
@@ -142,7 +143,7 @@ export async function POST(req: NextRequest) {
         db.tx.agentGenerations[genId].update({ status: "failed" }),
       ]);
       return NextResponse.json(
-        { error: "generation_failed", detail: String(e) },
+        { error: "generation_failed", detail: errorDetail(e) },
         { status: 502 },
       );
     }
