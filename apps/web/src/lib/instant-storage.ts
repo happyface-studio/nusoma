@@ -532,18 +532,12 @@ class InstantCanvasStorage {
         existingElements.data as CanvasElementsQueryData;
       const elements = canvasElements || [];
       const existingIds = new Set(elements.map((element) => element.id));
-      const newElementIds = new Set(
-        state.elements.map((element) => element.id),
-      );
 
-      // Delete elements that are no longer in the state
-      const deleteTxs = elements
-        .filter((element) => !newElementIds.has(element.id))
-        .map((element) => db.tx.canvasElements[element.id].delete());
-
-      if (deleteTxs.length > 0) {
-        await db.transact(deleteTxs);
-      }
+      // Upsert-only: no destructive reconcile here. Deletions are persisted
+      // explicitly at the delete call site (handleDelete). Reconcile-deleting
+      // every element absent from this client's in-memory state would clobber
+      // elements the client hasn't loaded yet — e.g. agent-generated media that
+      // streams in via the live canvasProjects.elements subscription.
 
       // Update or create elements
       const elementTxs = state.elements.flatMap((element) => {

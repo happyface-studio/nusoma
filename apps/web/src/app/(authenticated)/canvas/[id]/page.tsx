@@ -267,6 +267,9 @@ export default function OverlayPage() {
           canvasProjects: {
             $: { where: { id: projectId } },
             folder: {},
+            // Live element set (incl. asset file URLs) so server-side inserts
+            // — e.g. agent-generated media — stream into the canvas reactively.
+            elements: { asset: { file: {} } },
           },
         }
       : { canvasProjects: { $: { where: { id: "__none__" } } } },
@@ -1146,6 +1149,83 @@ export default function OverlayPage() {
       void loadFromStorage();
     }
   }, [agentStatus, loadFromStorage]);
+
+  // Reactively merge server-side element inserts (agent-generated media, other
+  // tabs) into local canvas state. Only ADDS elements this client doesn't have —
+  // never overwrites in-progress local edits, never removes (deletions are
+  // explicit via handleDelete). This is what makes agent output appear without a
+  // manual reload; with the destructive save-reconcile removed, it also can't be
+  // clobbered by a stale save.
+  useEffect(() => {
+    if (!isStorageLoaded) return;
+    const dbElements = (project?.elements ?? []) as any[];
+    if (dbElements.length === 0) return;
+    const one = (v: any) => (Array.isArray(v) ? v[0] : v);
+    const cropOf = (el: any) =>
+      el.cropX !== undefined
+        ? {
+            cropX: el.cropX,
+            cropY: el.cropY,
+            cropWidth: el.cropWidth,
+            cropHeight: el.cropHeight,
+          }
+        : {};
+
+    setImages((prev) => {
+      const have = new Set(prev.map((i) => i.id));
+      const additions: PlacedImage[] = [];
+      for (const el of dbElements) {
+        if (el.type !== "image" || have.has(el.id)) continue;
+        const asset = one(el.asset);
+        const url = one(asset?.file)?.url;
+        if (!url) continue;
+        additions.push({
+          id: el.id,
+          src: url,
+          x: el.x ?? 0,
+          y: el.y ?? 0,
+          width: el.width ?? 300,
+          height: el.height ?? 300,
+          rotation: el.rotation ?? 0,
+          ...cropOf(el),
+          ...(asset?.prompt ? { generationPrompt: asset.prompt } : {}),
+          ...(asset?.creditsConsumed
+            ? { creditsConsumed: asset.creditsConsumed }
+            : {}),
+        });
+      }
+      return additions.length ? [...prev, ...additions] : prev;
+    });
+
+    setVideos((prev) => {
+      const have = new Set(prev.map((v) => v.id));
+      const additions: PlacedVideo[] = [];
+      for (const el of dbElements) {
+        if (el.type !== "video" || have.has(el.id)) continue;
+        const asset = one(el.asset);
+        const url = one(asset?.file)?.url;
+        if (!url) continue;
+        additions.push({
+          id: el.id,
+          src: url,
+          x: el.x ?? 0,
+          y: el.y ?? 0,
+          width: el.width ?? 300,
+          height: el.height ?? 300,
+          rotation: el.rotation ?? 0,
+          isVideo: true,
+          duration: el.duration ?? asset?.duration ?? 0,
+          currentTime: el.currentTime ?? 0,
+          isPlaying: el.isPlaying ?? false,
+          volume: el.volume ?? 1,
+          muted: el.muted ?? false,
+          isLoaded: false,
+          ...cropOf(el),
+        });
+      }
+      return additions.length ? [...prev, ...additions] : prev;
+    });
+  }, [project?.elements, isStorageLoaded]);
 
   // Load grid setting from localStorage on mount
   useEffect(() => {

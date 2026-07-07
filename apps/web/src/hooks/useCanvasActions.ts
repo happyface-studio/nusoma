@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { id } from "@instantdb/react";
+import { db } from "@/lib/db";
 import { PlacedImage, PlacedVideo } from "@/types/canvas";
 
 interface UseCanvasActionsProps {
@@ -24,9 +25,18 @@ export function useCanvasActions({
   // Delete selected items
   const handleDelete = useCallback(() => {
     saveToHistory();
-    setImages((prev) => prev.filter((img) => !selectedIds.includes(img.id)));
-    setVideos((prev) => prev.filter((vid) => !selectedIds.includes(vid.id)));
+    const idsToDelete = selectedIds;
+    setImages((prev) => prev.filter((img) => !idsToDelete.includes(img.id)));
+    setVideos((prev) => prev.filter((vid) => !idsToDelete.includes(vid.id)));
     setSelectedIds([]);
+    // Persist the deletion. saveCanvasState is now upsert-only (it no longer
+    // reconcile-deletes), so removals must be written to the DB here. Deleting a
+    // not-yet-persisted id is a harmless no-op.
+    if (idsToDelete.length > 0) {
+      void db.transact(
+        idsToDelete.map((eid) => db.tx.canvasElements[eid].delete()),
+      );
+    }
   }, [selectedIds, setImages, setVideos, setSelectedIds, saveToHistory]);
 
   // Duplicate selected items
