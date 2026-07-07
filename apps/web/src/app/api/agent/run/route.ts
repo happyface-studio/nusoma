@@ -61,8 +61,6 @@ export async function POST(req: NextRequest) {
     if (!project) {
       return NextResponse.json({ error: "not_found" }, { status: 404 });
     }
-    const saved = (project as { eveSessionState?: EveSessionState })
-      .eveSessionState;
 
     const billingUser: BillingUser = { userId: user.id };
     const remainingCredits = await getUserCredits(billingUser);
@@ -74,6 +72,9 @@ export async function POST(req: NextRequest) {
         runId,
         userId: user.id,
         projectId: body.projectId,
+        // Required by the live schema; matches agentGenerations' status vocabulary
+        // ("running" -> "completed"/"failed"). The run is in-flight at creation.
+        status: "running",
         spentCredits: 0,
         createdAt: new Date(),
         ...(body.placement ? { plannedPlacement: body.placement } : {}),
@@ -95,20 +96,19 @@ export async function POST(req: NextRequest) {
       .filter(Boolean)
       .join("\n");
 
-    const resume = Boolean(saved?.sessionId && saved?.continuationToken);
-    const url = resume
-      ? `${AGENT_URL}/eve/v1/session/${saved!.sessionId}`
-      : `${AGENT_URL}/eve/v1/session`;
-    const payload = resume
-      ? { continuationToken: saved!.continuationToken, message }
-      : { message };
-
+    // A fresh eve session per run. The agent is stateless by design — every run
+    // rebuilds context from the brief and the read_project tool (see
+    // apps/agent/agent/instructions.md), so it needs no cross-run session memory.
+    // Reusing a session also made the client replay the PRIOR turn's terminal
+    // event — eve's per-session event log is cumulative and the stream rewinds to
+    // 0 — which flipped the run to "done" and cleared the loading placeholder
+    // seconds before the new asset existed.
     let res: Response;
     try {
-      res = await fetch(url, {
+      res = await fetch(`${AGENT_URL}/eve/v1/session`, {
         method: "POST",
         headers: agentHeaders(),
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ message }),
       });
     } catch (e) {
       return NextResponse.json(
@@ -123,15 +123,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const eveSessionId =
-      res.headers.get("x-eve-session-id") ?? saved?.sessionId ?? null;
-    const data = (await res.json().catch(() => ({}))) as {
-      continuationToken?: string;
-    };
+    const eveSessionId = res.headers.get("x-eve-session-id") ?? null;
 
+    // Bind /api/agent/stream to this run's session (owner + session match).
     const state: EveSessionState = {
       sessionId: eveSessionId ?? undefined,
-      continuationToken: data.continuationToken ?? saved?.continuationToken,
       streamIndex: 0,
     };
     await db.transact([
@@ -140,7 +136,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ runId, eveSessionId });
   } catch (e) {
-    console.error("[agent-run] unhandled error", { error: String(e) });
+    console.error(
+      "[agent-run] unhandled error",
+      e instanceof Error ? (e.stack ?? e.message) : String(e),
+    );
     return NextResponse.json({ error: "internal_error" }, { status: 500 });
   }
 }

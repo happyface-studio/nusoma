@@ -1,5 +1,5 @@
 import React from "react";
-import { Group, Line } from "react-konva";
+import { Shape } from "react-konva";
 import { useTheme } from "next-themes";
 
 interface CanvasGridProps {
@@ -16,6 +16,10 @@ interface CanvasGridProps {
   gridColor?: string;
 }
 
+// One Shape drawing all grid lines in a single path. Rendering each line as
+// its own <Line> node meant hundreds of React elements reconciled and drawn
+// (scene + hit canvas) on every pan/zoom frame. listening={false} also keeps
+// the grid out of hit detection so clicks on lines still reach the stage.
 export const CanvasGrid: React.FC<CanvasGridProps> = ({
   viewport,
   canvasSize,
@@ -27,7 +31,6 @@ export const CanvasGrid: React.FC<CanvasGridProps> = ({
   // Set grid color based on theme
   const effectiveGridColor =
     gridColor || (resolvedTheme === "dark" ? "#222222" : "#F2F2F2");
-  const lines = [];
 
   // Calculate visible area in canvas coordinates
   const startX = Math.floor(-viewport.x / viewport.scale / gridSize) * gridSize;
@@ -39,29 +42,23 @@ export const CanvasGrid: React.FC<CanvasGridProps> = ({
     Math.ceil((canvasSize.height - viewport.y) / viewport.scale / gridSize) *
     gridSize;
 
-  // Vertical lines
-  for (let x = startX; x <= endX; x += gridSize) {
-    lines.push(
-      <Line
-        key={`v-${x}`}
-        points={[x, startY, x, endY]}
-        stroke={effectiveGridColor}
-        strokeWidth={1}
-      />,
-    );
-  }
-
-  // Horizontal lines
-  for (let y = startY; y <= endY; y += gridSize) {
-    lines.push(
-      <Line
-        key={`h-${y}`}
-        points={[startX, y, endX, y]}
-        stroke={effectiveGridColor}
-        strokeWidth={1}
-      />,
-    );
-  }
-
-  return <Group>{lines}</Group>;
+  return (
+    <Shape
+      listening={false}
+      stroke={effectiveGridColor}
+      strokeWidth={1}
+      sceneFunc={(ctx, shape) => {
+        ctx.beginPath();
+        for (let x = startX; x <= endX; x += gridSize) {
+          ctx.moveTo(x, startY);
+          ctx.lineTo(x, endY);
+        }
+        for (let y = startY; y <= endY; y += gridSize) {
+          ctx.moveTo(startX, y);
+          ctx.lineTo(endX, y);
+        }
+        ctx.fillStrokeShape(shape);
+      }}
+    />
+  );
 };

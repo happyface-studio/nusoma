@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type Konva from "konva";
 import type { PlacedImage, PlacedVideo, SelectionBox } from "@/types/canvas";
+import { createFrameCoalescer } from "@/utils/performance";
 
 export type { Viewport } from "@/utils/canvas-utils";
 import type { Viewport } from "@/utils/canvas-utils";
@@ -45,22 +46,33 @@ export function useCanvasViewport(opts: {
   });
   const [isCanvasReady, setIsCanvasReady] = useState(false);
   const [isPanningCanvas, setIsPanningCanvas] = useState(false);
-  const [lastPanPosition, setLastPanPosition] = useState({ x: 0, y: 0 });
   const [viewport, setViewport] = useState<Viewport>({
     x: 0,
     y: 0,
     scale: 1,
   });
 
-  // Touch event states for mobile
-  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(
-    null,
+  // Gesture-internal positions live in refs, not state: nothing renders them,
+  // and putting them in state forced a full page re-render per pointer move.
+  const lastPanPosition = useRef({ x: 0, y: 0 });
+  const lastTouchDistance = useRef<number | null>(null);
+  const lastTouchCenter = useRef<{ x: number; y: number } | null>(null);
+  const isTouchingImage = useRef(false);
+
+  // Wheel/pinch/pan events fire faster than the display refreshes, and each
+  // setViewport re-renders the whole canvas page. Coalesce them: handlers
+  // compute from the latest pending value (not the stale render-time closure)
+  // and flush at most one setViewport per animation frame.
+  const [viewportQueue] = useState(() =>
+    createFrameCoalescer<Viewport>((v) => setViewport(v)),
   );
-  const [lastTouchCenter, setLastTouchCenter] = useState<{
-    x: number;
-    y: number;
-  } | null>(null);
-  const [isTouchingImage, setIsTouchingImage] = useState(false);
+  viewportQueue.sync(viewport);
+  const currentViewport = viewportQueue.current;
+  const queueViewport = viewportQueue.queue;
+
+  useEffect(() => {
+    return () => viewportQueue.cancel();
+  }, [viewportQueue]);
 
   // Set canvas ready state after mount
   useEffect(() => {
@@ -110,48 +122,41 @@ export function useCanvasViewport(opts: {
     const stage = stageRef.current;
     if (!stage) return;
 
+    const vp = currentViewport();
+
     // Check if this is a pinch gesture (ctrl key is pressed on trackpad pinch)
     if (e.evt.ctrlKey) {
       // This is a pinch-to-zoom gesture
-      const oldScale = viewport.scale;
+      const oldScale = vp.scale;
       const pointer = stage.getPointerPosition();
       if (!pointer) return;
 
       const mousePointTo = {
-        x: (pointer.x - viewport.x) / oldScale,
-        y: (pointer.y - viewport.y) / oldScale,
+        x: (pointer.x - vp.x) / oldScale,
+        y: (pointer.y - vp.y) / oldScale,
       };
 
       // Zoom based on deltaY (negative = zoom in, positive = zoom out)
       const scaleBy = 1.01;
       const direction = e.evt.deltaY > 0 ? -1 : 1;
       const steps = Math.min(Math.abs(e.evt.deltaY), 10);
-      let newScale = oldScale;
-
-      for (let i = 0; i < steps; i++) {
-        newScale = direction > 0 ? newScale * scaleBy : newScale / scaleBy;
-      }
+      const newScale = oldScale * Math.pow(scaleBy, direction * steps);
 
       // Limit zoom (10% to 500%)
       const scale = Math.max(0.1, Math.min(5, newScale));
 
-      const newPos = {
+      queueViewport({
         x: pointer.x - mousePointTo.x * scale,
         y: pointer.y - mousePointTo.y * scale,
-      };
-
-      setViewport({ x: newPos.x, y: newPos.y, scale });
+        scale,
+      });
     } else {
       // This is a pan gesture (two-finger swipe on trackpad or mouse wheel)
       const deltaX = e.evt.shiftKey ? e.evt.deltaY : e.evt.deltaX;
       const deltaY = e.evt.shiftKey ? 0 : e.evt.deltaY;
 
       // Invert the direction to match natural scrolling
-      setViewport((prev) => ({
-        ...prev,
-        x: prev.x - deltaX,
-        y: prev.y - deltaY,
-      }));
+      queueViewport({ ...vp, x: vp.x - deltaX, y: vp.y - deltaY });
     }
   };
 
@@ -174,8 +179,8 @@ export function useCanvasViewport(opts: {
         y: (touch1.y + touch2.y) / 2,
       };
 
-      setLastTouchDistance(distance);
-      setLastTouchCenter(center);
+      lastTouchDistance.current = distance;
+      lastTouchCenter.current = center;
     } else if (touches.length === 1) {
       // Single finger - check if touching an image
       const touch = { x: touches[0].clientX, y: touches[0].clientY };
@@ -184,13 +189,14 @@ export function useCanvasViewport(opts: {
       if (stage) {
         const pos = stage.getPointerPosition();
         if (pos) {
+          const vp = currentViewport();
           const canvasPos = {
-            x: (pos.x - viewport.x) / viewport.scale,
-            y: (pos.y - viewport.y) / viewport.scale,
+            x: (pos.x - vp.x) / vp.scale,
+            y: (pos.y - vp.y) / vp.scale,
           };
 
           // Check if touch is on any image
-          const touchedImage = images.some((img) => {
+          isTouchingImage.current = images.some((img) => {
             return (
               canvasPos.x >= img.x &&
               canvasPos.x <= img.x + img.width &&
@@ -198,19 +204,17 @@ export function useCanvasViewport(opts: {
               canvasPos.y <= img.y + img.height
             );
           });
-
-          setIsTouchingImage(touchedImage);
         }
       }
 
-      setLastTouchCenter(touch);
+      lastTouchCenter.current = touch;
     }
   };
 
   const handleTouchMove = (e: Konva.KonvaEventObject<TouchEvent>) => {
     const touches = e.evt.touches;
 
-    if (touches.length === 2 && lastTouchDistance && lastTouchCenter) {
+    if (touches.length === 2 && lastTouchDistance.current) {
       // Two fingers - handle pinch-to-zoom
       e.evt.preventDefault();
 
@@ -227,8 +231,9 @@ export function useCanvasViewport(opts: {
       };
 
       // Calculate scale change
-      const scaleFactor = distance / lastTouchDistance;
-      const newScale = Math.max(0.1, Math.min(5, viewport.scale * scaleFactor));
+      const vp = currentViewport();
+      const scaleFactor = distance / lastTouchDistance.current;
+      const newScale = Math.max(0.1, Math.min(5, vp.scale * scaleFactor));
 
       // Calculate new position to zoom towards pinch center
       const stage = stageRef.current;
@@ -240,26 +245,25 @@ export function useCanvasViewport(opts: {
         };
 
         const mousePointTo = {
-          x: (stageCenter.x - viewport.x) / viewport.scale,
-          y: (stageCenter.y - viewport.y) / viewport.scale,
+          x: (stageCenter.x - vp.x) / vp.scale,
+          y: (stageCenter.y - vp.y) / vp.scale,
         };
 
-        const newPos = {
+        queueViewport({
           x: stageCenter.x - mousePointTo.x * newScale,
           y: stageCenter.y - mousePointTo.y * newScale,
-        };
-
-        setViewport({ x: newPos.x, y: newPos.y, scale: newScale });
+          scale: newScale,
+        });
       }
 
-      setLastTouchDistance(distance);
-      setLastTouchCenter(center);
+      lastTouchDistance.current = distance;
+      lastTouchCenter.current = center;
     } else if (
       touches.length === 1 &&
-      lastTouchCenter &&
+      lastTouchCenter.current &&
       !isSelecting &&
       !isDraggingImage &&
-      !isTouchingImage
+      !isTouchingImage.current
     ) {
       // Single finger - handle pan (only if not selecting, dragging, or touching an image)
       // Don't prevent default if there might be system dialogs open
@@ -269,23 +273,20 @@ export function useCanvasViewport(opts: {
       }
 
       const touch = { x: touches[0].clientX, y: touches[0].clientY };
-      const deltaX = touch.x - lastTouchCenter.x;
-      const deltaY = touch.y - lastTouchCenter.y;
+      const deltaX = touch.x - lastTouchCenter.current.x;
+      const deltaY = touch.y - lastTouchCenter.current.y;
 
-      setViewport((prev) => ({
-        ...prev,
-        x: prev.x + deltaX,
-        y: prev.y + deltaY,
-      }));
+      const vp = currentViewport();
+      queueViewport({ ...vp, x: vp.x + deltaX, y: vp.y + deltaY });
 
-      setLastTouchCenter(touch);
+      lastTouchCenter.current = touch;
     }
   };
 
-  const handleTouchEnd = (e: Konva.KonvaEventObject<TouchEvent>) => {
-    setLastTouchDistance(null);
-    setLastTouchCenter(null);
-    setIsTouchingImage(false);
+  const handleTouchEnd = (_e: Konva.KonvaEventObject<TouchEvent>) => {
+    lastTouchDistance.current = null;
+    lastTouchCenter.current = null;
+    isTouchingImage.current = false;
   };
 
   // Handle drag selection and panning
@@ -298,7 +299,7 @@ export function useCanvasViewport(opts: {
     if (mouseButton === 1) {
       e.evt.preventDefault();
       setIsPanningCanvas(true);
-      setLastPanPosition({ x: e.evt.clientX, y: e.evt.clientY });
+      lastPanPosition.current = { x: e.evt.clientX, y: e.evt.clientY };
       return;
     }
 
@@ -345,16 +346,13 @@ export function useCanvasViewport(opts: {
 
     // Handle canvas panning with middle mouse
     if (isPanningCanvas) {
-      const deltaX = e.evt.clientX - lastPanPosition.x;
-      const deltaY = e.evt.clientY - lastPanPosition.y;
+      const deltaX = e.evt.clientX - lastPanPosition.current.x;
+      const deltaY = e.evt.clientY - lastPanPosition.current.y;
 
-      setViewport((prev) => ({
-        ...prev,
-        x: prev.x + deltaX,
-        y: prev.y + deltaY,
-      }));
+      const vp = currentViewport();
+      queueViewport({ ...vp, x: vp.x + deltaX, y: vp.y + deltaY });
 
-      setLastPanPosition({ x: e.evt.clientX, y: e.evt.clientY });
+      lastPanPosition.current = { x: e.evt.clientX, y: e.evt.clientY };
       return;
     }
 
