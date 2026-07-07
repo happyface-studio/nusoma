@@ -1,12 +1,11 @@
 "use client";
 
 import React from "react";
-import { useState, useCallback } from "react";
+import { useState } from "react";
 import { Stage, Layer } from "react-konva";
 import Konva from "konva";
 import { canvasStorage } from "@/lib/instant-storage";
 import { useAuth } from "@/providers/auth-provider";
-import { id } from "@instantdb/react";
 
 import { Button } from "@/components/ui/button";
 import { Undo, Redo } from "lucide-react";
