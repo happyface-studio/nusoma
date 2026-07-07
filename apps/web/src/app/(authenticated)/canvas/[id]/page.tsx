@@ -73,6 +73,7 @@ import { GeneratingPlaceholder } from "@/components/canvas/GeneratingPlaceholder
 import { SettingsDialog } from "@/components/canvas/SettingsDialog";
 import { db } from "@/lib/db";
 import { useAgentRun } from "@/hooks/useAgentRun";
+import { usePromptSync } from "@/hooks/usePromptSync";
 import { findOpenSpot, dimsForOutput, type Rect } from "@/lib/canvas-placement";
 
 // Import handlers
@@ -142,8 +143,6 @@ export default function OverlayPage() {
   });
   const stageRef = useRef<Konva.Stage>(null);
   const promptEditorRef = useRef<PromptEditorHandle>(null);
-  // Track sync source to avoid infinite loops in bidirectional sync
-  const syncSourceRef = useRef<"canvas" | "prompt" | null>(null);
   const [isolateTarget, setIsolateTarget] = useState<string | null>(null);
   const [isolateInputValue, setIsolateInputValue] = useState("");
   const [isIsolating, setIsIsolating] = useState(false);
@@ -1494,61 +1493,14 @@ export default function OverlayPage() {
     setIsTouchingImage(false);
   };
 
-  // Handle selection
-  const handleSelect = (
-    id: string,
-    e: Konva.KonvaEventObject<MouseEvent | TouchEvent>,
-  ) => {
-    syncSourceRef.current = "canvas";
-
-    const image = images.find((img) => img.id === id);
-    const isImage = !!image;
-
-    if (e.evt.shiftKey || e.evt.metaKey || e.evt.ctrlKey) {
-      // Multi-select toggle
-      const isCurrentlySelected = selectedIds.includes(id);
-      const newSelection = isCurrentlySelected
-        ? selectedIds.filter((i) => i !== id)
-        : [...selectedIds, id];
-
-      // Sync to prompt editor for assets
-      if (promptEditorRef.current) {
-        if (isCurrentlySelected) {
-          promptEditorRef.current.removeAssetReference(id);
-        } else {
-          // Only insert if it's an image or video
-          const asset = image || videos.find((v) => v.id === id);
-          if (asset) {
-            promptEditorRef.current.insertAssetReference(asset);
-          }
-        }
-      }
-
-      setSelectedIds(newSelection);
-    } else {
-      // Single select - clear others, select this one
-      // Remove old asset references
-      if (promptEditorRef.current) {
-        const currentRefs = promptEditorRef.current.getReferencedAssetIds();
-        currentRefs.forEach((refId) => {
-          if (refId !== id) {
-            promptEditorRef.current?.removeAssetReference(refId);
-          }
-        });
-        // Add new reference if it's an asset and not already referenced
-        const asset = image || videos.find((v) => v.id === id);
-        if (asset && !currentRefs.includes(id)) {
-          promptEditorRef.current.insertAssetReference(asset);
-        }
-      }
-      setSelectedIds([id]);
-    }
-
-    // Reset sync source after a tick
-    setTimeout(() => {
-      syncSourceRef.current = null;
-    }, 0);
-  };
+  const { handleSelect, clearSelection, onAssetReferencesChange } =
+    usePromptSync({
+      promptEditorRef,
+      images,
+      videos,
+      selectedIds,
+      setSelectedIds,
+    });
 
   // Handle drag selection and panning
   const handleMouseDown = (e: Konva.KonvaEventObject<MouseEvent>) => {
@@ -1597,17 +1549,7 @@ export default function OverlayPage() {
         });
 
         // Clear all asset references when clicking empty canvas
-        syncSourceRef.current = "canvas";
-        if (promptEditorRef.current) {
-          const currentRefs = promptEditorRef.current.getReferencedAssetIds();
-          currentRefs.forEach((refId) => {
-            promptEditorRef.current?.removeAssetReference(refId);
-          });
-        }
-        setSelectedIds([]);
-        setTimeout(() => {
-          syncSourceRef.current = null;
-        }, 0);
+        clearSelection();
       }
     }
   };
@@ -3001,18 +2943,7 @@ export default function OverlayPage() {
               handleRun={handleRun}
               handleFileUpload={handleFileUpload}
               toast={toast}
-              onAssetReferencesChange={(assetIds) => {
-                // Only sync if the change came from the prompt editor, not from canvas
-                if (syncSourceRef.current === "canvas") return;
-
-                syncSourceRef.current = "prompt";
-                // Sync canvas selection when @ asset references change in prompt
-                setSelectedIds(assetIds);
-                // Reset sync source after a tick
-                setTimeout(() => {
-                  syncSourceRef.current = null;
-                }, 0);
-              }}
+              onAssetReferencesChange={onAssetReferencesChange}
             />
 
             {/* Zoom controls */}
