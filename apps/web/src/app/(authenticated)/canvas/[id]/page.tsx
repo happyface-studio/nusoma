@@ -69,6 +69,7 @@ import { useCanvasPersistence } from "@/hooks/useCanvasPersistence";
 import { useIsolateObject } from "@/hooks/useIsolateObject";
 import { useAgentGeneration } from "@/hooks/useAgentGeneration";
 import { useVideoGenerationPipeline } from "@/hooks/useVideoGenerationPipeline";
+import { useSnapDragHandlers } from "@/hooks/useSnapDragHandlers";
 
 // Import handlers
 import { handleRemoveBackground as handleRemoveBackgroundHandler } from "@/lib/handlers/background-handler";
@@ -385,6 +386,23 @@ export default function OverlayPage() {
   // Use snapping hook
   const { guideLines, getSnapping, updateGuideLines, clearGuideLines } =
     useCanvasSnapping(images, videos, canvasSize, viewport);
+
+  const { imageDragHandlers, videoDragHandlers } = useSnapDragHandlers({
+    getSnapping,
+    updateGuideLines,
+    clearGuideLines,
+    selectedIds,
+    setSelectedIds,
+    images,
+    videos,
+    setImages,
+    setVideos,
+    dragStartPositions,
+    setDragStartPositions,
+    setIsDraggingImage,
+    setHiddenVideoControlsIds,
+    saveToHistory,
+  });
 
   // Handle keyboard shortcuts
   useEffect(() => {
@@ -784,111 +802,9 @@ export default function OverlayPage() {
                                   ),
                                 );
                               }}
-                              onDragMove={(e, newAttrs) => {
-                                // Apply snapping during drag
-                                const updatedImage = { ...image, ...newAttrs };
-                                const snapping = getSnapping(updatedImage);
-
-                                if (snapping.guides.length > 0) {
-                                  updateGuideLines(snapping.guides);
-
-                                  // Apply snapping to the dragged image
-                                  const snappedAttrs = {
-                                    ...newAttrs,
-                                    ...(snapping.snappedX !== undefined && {
-                                      x: snapping.snappedX,
-                                    }),
-                                    ...(snapping.snappedY !== undefined && {
-                                      y: snapping.snappedY,
-                                    }),
-                                  };
-
-                                  setImages((prev) =>
-                                    prev.map((img) =>
-                                      img.id === image.id
-                                        ? { ...img, ...snappedAttrs }
-                                        : img,
-                                    ),
-                                  );
-
-                                  // Update other selected items with the same delta
-                                  if (selectedIds.length > 1) {
-                                    const deltaX =
-                                      (snappedAttrs.x ??
-                                        newAttrs.x ??
-                                        image.x) - image.x;
-                                    const deltaY =
-                                      (snappedAttrs.y ??
-                                        newAttrs.y ??
-                                        image.y) - image.y;
-
-                                    setImages((prev) =>
-                                      prev.map((img) => {
-                                        if (
-                                          selectedIds.includes(img.id) &&
-                                          img.id !== image.id
-                                        ) {
-                                          const startPos =
-                                            dragStartPositions.get(img.id);
-                                          if (startPos) {
-                                            return {
-                                              ...img,
-                                              x: startPos.x + deltaX,
-                                              y: startPos.y + deltaY,
-                                            };
-                                          }
-                                        }
-                                        return img;
-                                      }),
-                                    );
-                                  }
-
-                                  // Return the snapped coordinates to update the Konva node
-                                  return snappedAttrs;
-                                } else {
-                                  clearGuideLines();
-                                  setImages((prev) =>
-                                    prev.map((img) =>
-                                      img.id === image.id
-                                        ? { ...img, ...newAttrs }
-                                        : img,
-                                    ),
-                                  );
-                                  // Return the new attributes to update the Konva node
-                                  return newAttrs;
-                                }
-                              }}
+                              {...imageDragHandlers(image)}
                               onDoubleClick={() => {
                                 setCroppingImageId(image.id);
-                              }}
-                              onDragStart={() => {
-                                // If dragging a selected item in a multi-selection, keep the selection
-                                // If dragging an unselected item, select only that item
-                                let currentSelectedIds = selectedIds;
-                                if (!selectedIds.includes(image.id)) {
-                                  currentSelectedIds = [image.id];
-                                  setSelectedIds(currentSelectedIds);
-                                }
-
-                                setIsDraggingImage(true);
-                                // Save positions of all selected items
-                                const positions = new Map<
-                                  string,
-                                  { x: number; y: number }
-                                >();
-                                currentSelectedIds.forEach((id) => {
-                                  const img = images.find((i) => i.id === id);
-                                  if (img) {
-                                    positions.set(id, { x: img.x, y: img.y });
-                                  }
-                                });
-                                setDragStartPositions(positions);
-                              }}
-                              onDragEnd={() => {
-                                setIsDraggingImage(false);
-                                clearGuideLines();
-                                saveToHistory();
-                                setDragStartPositions(new Map());
                               }}
                               selectedIds={selectedIds}
                               images={images}
@@ -939,119 +855,7 @@ export default function OverlayPage() {
                                   ),
                                 );
                               }}
-                              onDragMove={(e, newAttrs) => {
-                                // Apply snapping during drag
-                                const updatedVideo = { ...video, ...newAttrs };
-                                const snapping = getSnapping(updatedVideo);
-
-                                if (snapping.guides.length > 0) {
-                                  updateGuideLines(snapping.guides);
-
-                                  // Apply snapping to the dragged video
-                                  const snappedAttrs = {
-                                    ...newAttrs,
-                                    ...(snapping.snappedX !== undefined && {
-                                      x: snapping.snappedX,
-                                    }),
-                                    ...(snapping.snappedY !== undefined && {
-                                      y: snapping.snappedY,
-                                    }),
-                                  };
-
-                                  setVideos((prev) =>
-                                    prev.map((vid) =>
-                                      vid.id === video.id
-                                        ? { ...vid, ...snappedAttrs }
-                                        : vid,
-                                    ),
-                                  );
-
-                                  // Update other selected items with the same delta
-                                  if (selectedIds.length > 1) {
-                                    const deltaX =
-                                      (snappedAttrs.x ??
-                                        newAttrs.x ??
-                                        video.x) - video.x;
-                                    const deltaY =
-                                      (snappedAttrs.y ??
-                                        newAttrs.y ??
-                                        video.y) - video.y;
-
-                                    setVideos((prev) =>
-                                      prev.map((vid) => {
-                                        if (
-                                          selectedIds.includes(vid.id) &&
-                                          vid.id !== video.id
-                                        ) {
-                                          const startPos =
-                                            dragStartPositions.get(vid.id);
-                                          if (startPos) {
-                                            return {
-                                              ...vid,
-                                              x: startPos.x + deltaX,
-                                              y: startPos.y + deltaY,
-                                            };
-                                          }
-                                        }
-                                        return vid;
-                                      }),
-                                    );
-                                  }
-
-                                  // Return the snapped coordinates to update the Konva node
-                                  return snappedAttrs;
-                                } else {
-                                  clearGuideLines();
-                                  setVideos((prev) =>
-                                    prev.map((vid) =>
-                                      vid.id === video.id
-                                        ? { ...vid, ...newAttrs }
-                                        : vid,
-                                    ),
-                                  );
-                                  // Return the new attributes to update the Konva node
-                                  return newAttrs;
-                                }
-                              }}
-                              onDragStart={() => {
-                                // If dragging a selected item in a multi-selection, keep the selection
-                                // If dragging an unselected item, select only that item
-                                let currentSelectedIds = selectedIds;
-                                if (!selectedIds.includes(video.id)) {
-                                  currentSelectedIds = [video.id];
-                                  setSelectedIds(currentSelectedIds);
-                                }
-
-                                setIsDraggingImage(true);
-                                // Hide video controls during drag
-                                setHiddenVideoControlsIds(
-                                  (prev) => new Set([...prev, video.id]),
-                                );
-                                // Save positions of all selected items
-                                const positions = new Map<
-                                  string,
-                                  { x: number; y: number }
-                                >();
-                                currentSelectedIds.forEach((id) => {
-                                  const vid = videos.find((v) => v.id === id);
-                                  if (vid) {
-                                    positions.set(id, { x: vid.x, y: vid.y });
-                                  }
-                                });
-                                setDragStartPositions(positions);
-                              }}
-                              onDragEnd={() => {
-                                setIsDraggingImage(false);
-                                clearGuideLines();
-                                // Show video controls after drag ends
-                                setHiddenVideoControlsIds((prev) => {
-                                  const newSet = new Set(prev);
-                                  newSet.delete(video.id);
-                                  return newSet;
-                                });
-                                saveToHistory();
-                                setDragStartPositions(new Map());
-                              }}
+                              {...videoDragHandlers(video)}
                               selectedIds={selectedIds}
                               videos={videos}
                               setVideos={setVideos}
